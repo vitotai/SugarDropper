@@ -23,7 +23,7 @@
 #include "mystrlib.h"
 
 #define AdjustUnit 0.05
-#define MaximumAmount 20.0
+#define MaximumAmount 99.0
 #define MinimumAmount 0.5
 #define MaximumCalibrationCount 100
 
@@ -58,7 +58,8 @@ typedef enum _SugarAppId{
     SugarAppCalibration,
     SugarAppDosingSettingMode,
     SugarAppSoundSetting,
-    SugarAppUnitSetting
+    SugarAppUnitSetting,
+    SugarAppPriming
 } SugarAppId;
 
 
@@ -68,6 +69,7 @@ typedef enum _SugarAppId{
 #define DrosingSymbolChar 1
 #define RevDrosingSymbolChar 2
 #define DosingSymbolNone ' '
+#define DegreeChar 0b11011111
 LiquidCrystal_I2C *lcd;
 
 
@@ -187,6 +189,31 @@ void lcdDosingSymbol(char sym){
     lcd->setCursor(15,0);
     lcd->write(sym);
 }
+
+/*********************************************************************************/
+// Priming sugar calculator
+// PS = 15.195 VB (CD- 3.0378 + 5.0062 X 1o·2 T - 2.6555 X 1o·4 T2) 
+// PS: in gram
+// VB: volume of beer, in gallon
+// CD: Carbonation Desired
+// T:  temberature of beer, in Farenheight
+
+// input CD= volume
+//  beetAmount = beer volume in liter
+//  temperature = beer temperature in Celisus
+float calculatePrimingSugar(float CD, float beerAmount, float temperature){
+    
+    float VB = 0.264172052 * beerAmount;  // to Gallon
+    float T = 32 + temperature * 9/5; ; // to F
+     
+    return 15.195 * VB * ( CD - 3.0378 + 0.050062 * T - 0.00026555 * T * T);
+}
+/********************************************************************************/
+//     SG = (Brix / (258.6-((Brix / 258.2)*227.1))) + 1
+
+float brix2SG(float Brix){
+    return (Brix / (258.6-((Brix / 258.2)*227.1))) + 1;
+}
 /*********************************************************************************/
 // Settings
 
@@ -205,6 +232,11 @@ struct _Settings{
     uint8_t beepDoseStart;
     uint8_t beepDoseEnd;
     uint8_t useWeight;
+    // for priming sugar calculation
+    uint8_t inputBeer;
+    uint8_t sugarRatio; // in brix
+    int8_t   beerTemperature;
+    float   carbonation; // in volume
 } Settings;
 
 
@@ -594,7 +626,7 @@ const char strSetting[]  PROGMEM="Setting";
 const char strMl[] PROGMEM = "ml";
 const char strUnitSetting[] PROGMEM ="Unit";
 const char strFunction[] PROGMEM ="Function";
-
+const char strAutoDoseSettings[] PROGMEM="Auto Dose";
 struct MenuList;
 
 struct MenuItem{
@@ -619,6 +651,7 @@ const MenuItem SettingMenuItems[]={
     {strCalibration, false,{ .mode=SugarAppCalibration }},
     {strShotCalibration,false,{ .mode=SugarAppDoseCalibration}},
     {strDropSettings, false, { .mode=SugarAppDosingSettingMode }},
+    {strAutoDoseSettings, false, { .mode=SugarAppPriming }},
     {strSoundSetting, false, {.mode=SugarAppSoundSetting}},
     {strUnitSetting, false, {.mode=SugarAppUnitSetting}}
 };
@@ -709,15 +742,54 @@ protected:
 // Automatic dosing
 /*
 0123456789012345
-Automatic    999 
+Automatic   999x 
  999.25  199.25ml
 */
-const char strTotal[]  PROGMEM="S:";
+
+/*
+0123456789012345
+Automatic   999x 
+A:999.25  99.25ml
+
+
+v2
+0123456789012345
+# 999    1330mlX 
+A:999.25 99.25g
+
+0123456789012345
+# 999          X 
+A:999.25 99.25g
+
+*/
+
+const char strTotal[]  PROGMEM="A:";
+
+#define DosageAmountRow 1
+#define DosageAmountCol 9
+#define DosageAmountSpace 5
+
+#define BeerVolumeRow 0
+#define BeerVolumeCol 9
+#define BeerVolumeSpace 4
+
+#define DosageCountRow 0
+#define DosageCountCol 2
+#define DosageCountSymbolCol 0
+#define DosageCountSapce 3
+
+#define AccumulatedOutputRow 1
+#define AccumulatedOutputCol 2
+#define AccumulatedOutputStringCol 0
+#define AccumulatedOutputSpace 6
+
+#define MinimumBeerVolume 50
+#define DefaultBeerVolume  330
+#define MaximumBeerVolume 5000
 
 class AutoDoser:public SugarBaby{
 public:
     AutoDoser(){
-        if(_amount <= 0 || _amount > 100) _amount = 5;
         _totalAmount = 0;
         _count =0;
     }
@@ -725,10 +797,26 @@ public:
     ~AutoDoser(){}
 
     void show(){
-        lcdPrint_P(0,0,strAutomatic,true);
-        lcdPrint_P(0,1,strTotal);
-        if(Settings.useWeight) lcdWriteAt(14,1,'g');
-        else lcdPrint_P(14,1,strMl);
+        if(Settings.inputBeer){
+            if(_beerVolume < MinimumBeerVolume ||_beerVolume > MaximumBeerVolume) _beerVolume = DefaultBeerVolume;
+        }else{
+            if(_amount < MinimumAmount || _amount > MaximumAmount) _amount = 5;
+        }
+
+        // "A:"
+        lcdPrint_P(AccumulatedOutputStringCol,AccumulatedOutputRow,strTotal);
+        // dosage unit
+        if(Settings.useWeight) lcdWriteAt(DosageAmountCol + DosageAmountSpace,DosageAmountRow,'g');
+        else lcdPrint_P(DosageAmountCol + DosageAmountSpace,DosageAmountRow,strMl);
+        // "#"
+        lcdWriteAt(DosageCountSymbolCol,DosageCountRow,'#');
+
+        if(Settings.inputBeer){
+            lcdPrint_P(BeerVolumeCol + BeerVolumeSpace,BeerVolumeRow,strMl);
+            _updateBeerVolume();
+            _calPrimingSugar();
+        }
+
         _updateDosage();
         _updateCount();
         _updateTotal();
@@ -737,15 +825,35 @@ public:
     }
 
     void rotateForward(){
-        _amount += AdjustUnit;
-        if(_amount > MaximumAmount) _amount = MaximumAmount;
-        _updateDosage();
+        if(Settings.inputBeer){
+            if( (_beerVolume +10) < MaximumBeerVolume){
+                _beerVolume +=10;
+
+                _updateBeerVolume();
+                _calPrimingSugar();
+                _updateDosage();
+            }
+        }else{
+           _amount += AdjustUnit;
+            if(_amount > MaximumAmount) _amount = MaximumAmount;
+            _updateDosage();
+        }
     }
     
     void rotateBackward(){
-        _amount -= AdjustUnit;
-        if(_amount <MinimumAmount) _amount = MinimumAmount;
-        _updateDosage();
+        if(Settings.inputBeer){
+            if( (_beerVolume -10) > MinimumBeerVolume){
+                _beerVolume -=10;
+
+                _updateBeerVolume();
+                _calPrimingSugar();
+                _updateDosage();
+            }
+        }else{
+            _amount -= AdjustUnit;
+            if(_amount <MinimumAmount) _amount = MinimumAmount;
+            _updateDosage();
+        }
     }
 
     void dosingStateChanged(bool dosing){
@@ -763,25 +871,57 @@ protected:
     float _amount;
     float _totalAmount;
     uint16_t _count;
+    uint16_t _beerVolume;
 
-/*
-0123456789012345
-Automatic   999x 
-A:999.25  99.25ml
-*/
+    void _calPrimingSugar(){
+        //
+        DBGPrint(F("CD:"));
+        DBGPrint(Settings.carbonation);
+        DBGPrint(F(" beerTemperature:"));
+        DBGPrintln(Settings.beerTemperature);
+
+        float ps=calculatePrimingSugar(Settings.carbonation,(float)_beerVolume/1000.0,(float)Settings.beerTemperature);
+        float weight = ps / (float)Settings.sugarRatio * 100.0;
+        // if the unit is volume, calculate SG and derive volume
+        // however, temperature might be a problem. ignore that for now
+        DBGPrint(F("PS:"));
+        DBGPrint(ps);
+        DBGPrint(F(" weight:"));
+        DBGPrintln(weight);
+
+        if(Settings.useWeight){
+            _amount = weight;
+        }else{
+            DBGPrint(F("SG:"));
+            DBGPrintln(brix2SG((float)Settings.sugarRatio));
+
+            _amount = weight / brix2SG((float)Settings.sugarRatio);
+        }
+    }
 
     // LCD display
     void _updateCount(){
-        lcdPrintAt(11,0,_count,4);
+        lcdPrintAt(DosageCountCol,DosageCountRow,_count,DosageCountSapce);
     }
     void _updateTotal(){
-        lcdPrintAt(2,1,_totalAmount,6,2);
+        lcdPrintAt(AccumulatedOutputCol,AccumulatedOutputRow,_totalAmount,AccumulatedOutputSpace,2);
     }
     void _updateDosage(){
-        lcdPrintAt(9,1,_amount,5,2);
+        DBGPrint(F("Sugar amount:"));
+        DBGPrintln(_amount);
+        lcdPrintAt(DosageAmountCol,DosageAmountRow,_amount,DosageAmountSpace,2);
         dosingController.setDosage(_amount);
     }
+    void _updateBeerVolume(){
+        DBGPrint(F("Beer Vol:"));
+        DBGPrintln(_beerVolume);
+        lcdPrintAt(BeerVolumeCol,BeerVolumeRow,_beerVolume,BeerVolumeSpace);
+    }
 };
+
+
+/*********************************************************************************/
+// manual dosing
 
 /*
 0123456789012345
@@ -789,8 +929,6 @@ Manual
 100.1s  999.12ml
 */
 
-/*********************************************************************************/
-// manual dosing
 #define MinimumUpdateTime 100
 
 class ManualDoser:public SugarBaby{
@@ -1468,6 +1606,136 @@ protected:
         lcdPrint_P(10,1, Settings.useWeight? strWeight:strVolume);
     }
 };
+
+/*************************************************************************/
+// Carbonation Settings
+/*************************************************************************/
+// setting of 
+//  - Input Beer/Sugar  0
+//  - Sugar Brix         1
+//  - Co2 Volume         2
+//  - Beer Temp          3
+#define IndexInput 0
+#define IndexSugar 1
+#define IndexCo2Volume 2
+#define IndexBeerTemp 3
+
+#define LowestCarbonation 1.5
+#define HighestCarbonation 4.5
+#define MinBeerTemp 0
+#define MaxBeerTemp 40
+
+
+const char strCarbonation[] PROGMEM="Primimg";
+const char strInput[] PROGMEM="Input";
+const char strBeerVol[] PROGMEM="Beer Vol";
+const char strXSugar[] PROGMEM="   Sugar";
+const char strBrix[] PROGMEM="Brix";
+const char strCo2Vol[] PROGMEM="CO2 Vol.";
+const char strBeerTemp[] PROGMEM="Beer Temp";
+
+/*
+0123456789012345
+ Input  Beer vol
+           Sugar
+ Brix     012.Bx
+ Co2 Vol.    3.2
+ BeerTemp   12.C
+*/
+class PrimingSetting:public SugarBaby{
+public:
+    PrimingSetting(){}
+    ~PrimingSetting(){}
+      void show(){
+        _setIdx =0;
+        lcdPrint_P(0,0,strUnitSetting,true);
+        lcdPrint_P(0,1,strInput);
+        _printInputValue();
+    }
+
+    void rotateForward(){
+        if(_setIdx ==IndexInput){
+            if(Settings.inputBeer) Settings.inputBeer=0;
+            _printInputValue();
+        }else if(_setIdx ==IndexSugar){
+            if(Settings.sugarRatio<100) Settings.sugarRatio ++;
+            _printSugarRatio();
+        }else if(_setIdx ==IndexCo2Volume){
+            if(Settings.carbonation < LowestCarbonation) Settings.carbonation = LowestCarbonation;
+            else if(Settings.carbonation < HighestCarbonation) Settings.carbonation += 0.1;
+            _printCo2Volume();
+        }else if(_setIdx ==IndexBeerTemp){
+            if(Settings.beerTemperature < MaxBeerTemp) Settings.beerTemperature ++;
+            _printBeerTemp();
+        }
+
+    }
+    
+    void rotateBackward(){
+        if(_setIdx ==IndexInput){
+            if(Settings.inputBeer ==0) Settings.inputBeer=1;
+            _printInputValue();
+        } if(_setIdx ==IndexSugar){
+            if(Settings.sugarRatio>100) Settings.sugarRatio=100;
+            else if(Settings.sugarRatio>0) Settings.sugarRatio --;
+            _printSugarRatio();
+        }else if(_setIdx ==IndexCo2Volume){
+            if(Settings.carbonation > HighestCarbonation) Settings.carbonation = HighestCarbonation;
+            else if(Settings.carbonation > LowestCarbonation) Settings.carbonation -= 0.1;
+            _printCo2Volume();
+        }else if(_setIdx ==IndexBeerTemp){
+            if(Settings.beerTemperature > MinBeerTemp) Settings.beerTemperature --;
+            _printBeerTemp();
+        }
+    }
+    bool switchPushed(){
+        if(_setIdx ==IndexInput){
+            _setIdx = IndexSugar;
+            lcdPrint_P(0,1,strBrix,true);
+            lcd->setCursor(13,1);
+            lcd->write(DegreeChar);
+            lcd->write('B');
+            lcd->write('x');
+            _printSugarRatio();
+        }else if(_setIdx ==IndexSugar){
+            _setIdx = IndexCo2Volume;
+            lcdPrint_P(0,1, strCo2Vol, true);
+            _printCo2Volume();
+        }else if(_setIdx ==IndexCo2Volume){    
+            _setIdx =IndexBeerTemp;
+            lcdPrint_P(0,1,strBeerTemp,true);
+            lcd->setCursor(14,1);
+            lcd->write(DegreeChar);
+            lcd->write('C');
+            _printBeerTemp();
+        }else if(_setIdx == IndexBeerTemp){
+            SettingManager.save();
+            return true;
+        }
+        return false;
+    }
+protected:
+    uint8_t _setIdx;
+    void _printInputValue(){
+        if(Settings.inputBeer){
+            lcdPrint_P(8,1,strBeerVol);
+        }else{
+            lcdPrint_P(8,1,strXSugar);
+        }
+    }
+
+    void _printSugarRatio(){
+        lcdPrintAt(10,1,Settings.sugarRatio,3);
+    }
+    void _printCo2Volume(){
+        lcdPrintAt(13,1,Settings.carbonation,3,1);
+    }
+
+    void _printBeerTemp(){
+        lcdPrintAt(12,1,Settings.beerTemperature,2);
+    }
+
+};
 /*************************************************************************/
 // Main
 /*************************************************************************/
@@ -1554,6 +1822,10 @@ public:
                 break;
             case SugarAppUnitSetting:
                 _running = & _unitSetting;
+                break;
+            case SugarAppPriming:
+                _running=& _priming;
+                break;
         }
         dosingController.setMode(DosingModeDisabled);
         lcd->clear();
@@ -1570,4 +1842,5 @@ protected:
     TriggerSettings _dropSetting;
     SoundSetting _soundSetting;
     UnitSetting _unitSetting;
+    PrimingSetting _priming;
 };
