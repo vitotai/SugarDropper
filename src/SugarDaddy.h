@@ -236,8 +236,11 @@ struct _Settings{
     uint8_t inputBeer;
     uint8_t sugarRatio; // in brix
     int8_t   beerTemperature;
-    float   carbonation; // in volume
+    uint8_t  carbonation; // in volume * 10
 } Settings;
+
+#define Set2CV(v) (float)(v)/10.0
+#define CV2Set(v) (uint8_t)((v)*10)
 
 
 class SettingManagerClass{
@@ -626,7 +629,7 @@ const char strSetting[]  PROGMEM="Setting";
 const char strMl[] PROGMEM = "ml";
 const char strUnitSetting[] PROGMEM ="Unit";
 const char strFunction[] PROGMEM ="Function";
-const char strAutoDoseSettings[] PROGMEM="Auto Dose";
+const char strAutoDoseSettings[] PROGMEM="Priming";
 struct MenuList;
 
 struct MenuItem{
@@ -876,11 +879,11 @@ protected:
     void _calPrimingSugar(){
         //
         DBGPrint(F("CD:"));
-        DBGPrint(Settings.carbonation);
+        DBGPrint(Set2CV(Settings.carbonation));
         DBGPrint(F(" beerTemperature:"));
         DBGPrintln(Settings.beerTemperature);
 
-        float ps=calculatePrimingSugar(Settings.carbonation,(float)_beerVolume/1000.0,(float)Settings.beerTemperature);
+        float ps=calculatePrimingSugar(Set2CV(Settings.carbonation),(float)_beerVolume/1000.0,(float)Settings.beerTemperature);
         float weight = ps / (float)Settings.sugarRatio * 100.0;
         // if the unit is volume, calculate SG and derive volume
         // however, temperature might be a problem. ignore that for now
@@ -1620,8 +1623,8 @@ protected:
 #define IndexCo2Volume 2
 #define IndexBeerTemp 3
 
-#define LowestCarbonation 1.5
-#define HighestCarbonation 4.5
+#define LowestCarbonation 15
+#define HighestCarbonation 45
 #define MinBeerTemp 0
 #define MaxBeerTemp 40
 
@@ -1661,8 +1664,7 @@ public:
             if(Settings.sugarRatio<100) Settings.sugarRatio ++;
             _printSugarRatio();
         }else if(_setIdx ==IndexCo2Volume){
-            if(Settings.carbonation < LowestCarbonation) Settings.carbonation = LowestCarbonation;
-            else if(Settings.carbonation < HighestCarbonation) Settings.carbonation += 0.1;
+            if(Settings.carbonation < HighestCarbonation) Settings.carbonation += 1;
             _printCo2Volume();
         }else if(_setIdx ==IndexBeerTemp){
             if(Settings.beerTemperature < MaxBeerTemp) Settings.beerTemperature ++;
@@ -1676,12 +1678,12 @@ public:
             if(Settings.inputBeer ==0) Settings.inputBeer=1;
             _printInputValue();
         } if(_setIdx ==IndexSugar){
-            if(Settings.sugarRatio>100) Settings.sugarRatio=100;
-            else if(Settings.sugarRatio>0) Settings.sugarRatio --;
+            if(Settings.sugarRatio>0) Settings.sugarRatio --;
             _printSugarRatio();
         }else if(_setIdx ==IndexCo2Volume){
-            if(Settings.carbonation > HighestCarbonation) Settings.carbonation = HighestCarbonation;
-            else if(Settings.carbonation > LowestCarbonation) Settings.carbonation -= 0.1;
+            DBGPrint(F("Carbonation:"));
+            DBGPrintln(Settings.carbonation);
+            if(Settings.carbonation > LowestCarbonation) Settings.carbonation -= 1;
             _printCo2Volume();
         }else if(_setIdx ==IndexBeerTemp){
             if(Settings.beerTemperature > MinBeerTemp) Settings.beerTemperature --;
@@ -1696,10 +1698,13 @@ public:
             lcd->write(DegreeChar);
             lcd->write('B');
             lcd->write('x');
+            if(Settings.sugarRatio>100) Settings.sugarRatio=100;
             _printSugarRatio();
         }else if(_setIdx ==IndexSugar){
             _setIdx = IndexCo2Volume;
             lcdPrint_P(0,1, strCo2Vol, true);
+            if(Settings.carbonation < LowestCarbonation) Settings.carbonation = LowestCarbonation;
+            else if(Settings.carbonation > HighestCarbonation) Settings.carbonation = HighestCarbonation;
             _printCo2Volume();
         }else if(_setIdx ==IndexCo2Volume){    
             _setIdx =IndexBeerTemp;
@@ -1728,7 +1733,7 @@ protected:
         lcdPrintAt(10,1,Settings.sugarRatio,3);
     }
     void _printCo2Volume(){
-        lcdPrintAt(13,1,Settings.carbonation,3,1);
+        lcdPrintAt(13,1,Set2CV(Settings.carbonation),3,1);
     }
 
     void _printBeerTemp(){
