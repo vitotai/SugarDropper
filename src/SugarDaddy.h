@@ -23,6 +23,7 @@
 #include "mystrlib.h"
 
 #define AdjustUnit 0.01
+#define DoseAdjustUnit 0.05
 #define MaximumAmount 99.0
 #define MinimumAmount 0.5
 #define MaximumCalibrationCount 100
@@ -837,7 +838,7 @@ public:
                 _updateDosage();
             }
         }else{
-           _amount += AdjustUnit;
+           _amount += DoseAdjustUnit;
             if(_amount > MaximumAmount) _amount = MaximumAmount;
             _updateDosage();
         }
@@ -853,7 +854,7 @@ public:
                 _updateDosage();
             }
         }else{
-            _amount -= AdjustUnit;
+            _amount -= DoseAdjustUnit;
             if(_amount <MinimumAmount) _amount = MinimumAmount;
             _updateDosage();
         }
