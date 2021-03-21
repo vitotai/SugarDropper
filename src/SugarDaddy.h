@@ -22,7 +22,7 @@
 #include "Stepper.h"
 #include "mystrlib.h"
 
-#define AdjustUnit 0.05
+#define AdjustUnit 0.01
 #define MaximumAmount 99.0
 #define MinimumAmount 0.5
 #define MaximumCalibrationCount 100
@@ -1349,7 +1349,7 @@ Calibrated to
 
     void _displayAdjusting(){
         lcdPrint_P(0,0,strCalibratedTo,true);
-        lcdClear(0,1,14);
+        lcdClear(0,1,15);
         if(Settings.useWeight) lcdWriteAt(14,1,'g');
         else lcdPrint_P(14,1,strMl);
         _showAjustedAmount();
