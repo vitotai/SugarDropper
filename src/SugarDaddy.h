@@ -753,13 +753,13 @@ struct MenuList{
 extern const MenuList MainMenu;
 
 const MenuItem SettingMenuItems[]={
-    {strBack, true, { .subMenu= &MainMenu }},
     {strCalibration, false,{ .mode=SugarAppCalibration }},
     {strShotCalibration,false,{ .mode=SugarAppDoseCalibration}},
     {strDropSettings, false, { .mode=SugarAppDosingSettingMode }},
     {strAutoDoseSettings, false, { .mode=SugarAppPriming }},
     {strSoundSetting, false, {.mode=SugarAppSoundSetting}},
-    {strUnitSetting, false, {.mode=SugarAppUnitSetting}}
+    {strUnitSetting, false, {.mode=SugarAppUnitSetting}},
+    {strBack, true, { .subMenu= &MainMenu }}
 };
 
 const MenuList SettingMenu={
@@ -1741,33 +1741,71 @@ public:
 
 
     void show(){
+        _idx=0;
+        _editing = false;
         lcdPrint_P(0,0,strUnitSetting,true);
-        lcdPrint_P(0,1,strUse);
-        _printValue();
+        _showItem();
     }
     
     void rotateForward(){
-        if(Settings.useWeight ==0){
-           Settings.useWeight =1;
-           _printValue();
+        if(_editing){
+            if(Settings.useWeight ==0){
+                Settings.useWeight =1;
+                _printValue();
+            }
+        }else{
+            if(_idx >0){
+                _idx --;
+                _showItem();
+            }
         }
     }
 
     void rotateBackward(){
-        if(Settings.useWeight !=0){
-           Settings.useWeight =0;
-           _printValue();
+        if(_editing){
+            if(Settings.useWeight !=0){
+                Settings.useWeight =0;
+                _printValue();
+            }
+        }else{
+            if(_idx <1){
+                _idx ++;
+                _showItem();
+            }
         }
     }
 
     bool switchPushed(){
-        SettingManager.save();
-        return true;
+        if(_editing){
+            _editing=false;
+            EditingText.noblink();
+        }else{
+            if(_idx ==0){
+                _editing=true;
+                EditingText.blink();
+            }else{
+                SettingManager.save();
+                return true;
+            }
+        }
+        return false;
     }
 
 protected:
+    bool _editing;
+    uint8_t _idx;
+    void _showItem(){
+        if(_idx ==0){
+            lcdPrint_P(0,1,strUse,true);
+            _printValue();
+        }else{
+             lcdPrint_P(0,1,strBack,true);
+        }
+
+    }
     void _printValue(){
-        lcdPrint_P(10,1, Settings.useWeight? strWeight:strVolume);
+        EditingText.setText_P(10,1, Settings.useWeight? strWeight:strVolume);
+        EditingText.show();
     }
 };
 
