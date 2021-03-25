@@ -49,7 +49,8 @@
 #define BeepDoseStart 300
 #define BeepDoseEnd 550
 
-#define BlinkingTime 350
+#define BlinkingShowTime 600
+#define BlinkingHideTime 400
 
 typedef enum _SugarAppId{
     SugarAppMenu,
@@ -254,20 +255,27 @@ public:
                 p++;
             }
         }
+        _hiding =false;
     }
     
     void hide(){
         lcdSetCursor(_col,_row);
         for(int i=0;i<_space;i++) lcdWrite(' ');
+        _hiding =true;
     }
 
     void loop(){
         if(!_blinking) return;
-        if(millis() - _blinkTime > BlinkingTime){
-            if(_hiding)show();
-            else hide();
-            _hiding = !_hiding;
-            _blinkTime = millis();
+        if(_hiding){
+            if(millis() - _blinkTime > BlinkingHideTime){
+                show();                
+                _blinkTime = millis();
+            }
+        }else{
+            if(millis() - _blinkTime > BlinkingShowTime){
+                hide();
+                _blinkTime = millis();
+            }
         }
 
     }
@@ -1336,10 +1344,12 @@ public:
         if(_state == CS_SelectAmout){
             // show
             // Count    100
+            EditingText.noblink();
             lcdPrint_P(0,1,strCount,true); //rare case            
             _showTotalCount();
             _state = CS_SelectCount;
         }else if(_state == CS_SelectCount){
+            EditingText.noblink();
             // show
             //0123456789012345
             //Run 10.12ml *100
@@ -1365,6 +1375,7 @@ public:
         }else if(_state == CS_Running){
             /* do nothing */
         }else if(_state == CS_Adjust){
+            EditingText.noblink();
             _state = CS_Result;
             //  realAmount =  (_amount + x ) * _count
             // x = realAmount/_count - _amount
@@ -1419,10 +1430,14 @@ Calibrate by
  10.12 ml x  100
 */
     void _showCalAmount(){
-        lcdPrintAt(8,1,_amount,6,2);
+        //lcdPrintAt(8,1,_amount,6,2);
+        EditingText.setNumber(8,1,_amount,6,2);
+        EditingText.blink();
     }
     void _showTotalCount(){
-        lcdPrintAt(13,1,(int)_count,3);
+        //lcdPrintAt(13,1,(int)_count,3);
+        EditingText.setNumber(13,1,(int)_count,3);
+        EditingText.blink();
     }
 
 /*
@@ -1455,14 +1470,16 @@ Calibrated to
 
     void _displayAdjusting(){
         lcdPrint_P(0,0,strCalibratedTo,true);
-        lcdClear(0,1,15);
+        lcdClearLine(1);
         if(Settings.useWeight) lcdWriteAt(14,1,'g');
         else lcdPrint_P(14,1,strMl);
         _showAjustedAmount();
     }
 
     void _showAjustedAmount(){
-        lcdPrintAt(7,1,_realAmount,6,2);
+        //lcdPrintAt(7,1,_realAmount,6,2);
+        EditingText.setNumber(7,1,_realAmount,6,2);
+        EditingText.blink();
     }
     uint32_t _dropEndTime;
     uint16_t _count;
@@ -1488,9 +1505,10 @@ const char strButton[] PROGMEM ="Button";
 const char strSensor[] PROGMEM ="Sensor";
 
 enum TSState{
-    TS_TrigerType,
+    TS_TrigerType=0,
     TS_DelayTime,
-    TS_CoolTime
+    TS_CoolTime,
+    TS_Back
 };
 class TriggerSettings:public SugarBaby{
 public:
@@ -1498,90 +1516,127 @@ public:
     ~TriggerSettings(){}
 
     void show(){
+        _editing =false;
         _state = TS_TrigerType;
-
-        lcdPrint_P(0,0,strDosingControl,true);
-        lcdPrint_P(0,1,strControl,true);
-        _displayTrigerType();
+        _displayItems();
     }
     
     void rotateForward(){
-        if(_state == TS_TrigerType){
-            if(Settings.trigerType==0){
-                Settings.trigerType=1;
-                _displayTrigerType();
+        if(_editing){
+            if(_state == TS_TrigerType){
+                if(Settings.trigerType==0){
+                    Settings.trigerType=1;
+                    _displayTrigerType();
+                }
+            }else if(_state == TS_DelayTime){
+                if(Settings.delayTime < MaximumDelayTime){
+                    Settings.delayTime ++;
+                    _displayTime(Settings.delayTime);
+                }
+            }else if(_state == TS_CoolTime){
+                if(Settings.coolTime < MaximumCoolTime){
+                    Settings.coolTime ++;
+                    _displayTime(Settings.coolTime);
+                }
             }
-        }else if(_state == TS_DelayTime){
-            if(Settings.delayTime < MaximumDelayTime){
-                Settings.delayTime ++;
-                _displayTime(Settings.delayTime);
-            }
-        }else if(_state == TS_CoolTime){
-            if(Settings.coolTime < MaximumCoolTime){
-                Settings.coolTime ++;
-                _displayTime(Settings.coolTime);
+        }else{
+            // non editing
+            if((int)_state > (int)TS_TrigerType){
+                _state =(TSState) ((int)_state -1);
+                _displayItems();
             }
         }
     }
 
     void rotateBackward(){
-        if(_state == TS_TrigerType){
-            if(Settings.trigerType!=0){
-                Settings.trigerType=0;
-                _displayTrigerType();
+        if(_editing){
+            if(_state == TS_TrigerType){
+                if(Settings.trigerType!=0){
+                    Settings.trigerType=0;
+                    _displayTrigerType();
+                }
+            }else if(_state == TS_DelayTime){
+                if(Settings.delayTime > 0){
+                    Settings.delayTime --;
+                    _displayTime(Settings.delayTime);
+                }
+            }else if(_state == TS_CoolTime){
+                if(Settings.coolTime > 0){
+                    Settings.coolTime --;
+                    _displayTime(Settings.coolTime);
+                }
             }
-        }else if(_state == TS_DelayTime){
-            if(Settings.delayTime > 0){
-                Settings.delayTime --;
-                _displayTime(Settings.delayTime);
-            }
-        }else if(_state == TS_CoolTime){
-            if(Settings.coolTime > 0){
-                Settings.coolTime --;
-                _displayTime(Settings.coolTime);
+
+        }else{
+            // non editing
+            if((int)_state < (int)TS_Back){
+                _state =(TSState) ((int)_state +1);
+                _displayItems();
             }
         }
+
     }
 
     bool switchPushed(){
-        if(_state == TS_TrigerType){
-            _state = TS_DelayTime;
-
-            lcdPrint_P(0,1,strDelay,true);
-            _displayTime(Settings.delayTime);            
-            return false;
-        }else if(_state == TS_DelayTime){
-            _state = TS_CoolTime;
-
-            lcdPrint_P(0,1,strCoolTime,true);
-            _displayTime(Settings.coolTime);            
-
-        }else if(_state == TS_CoolTime){
-            SettingManager.save();
-            dosingController.loadSetting();
-            return true;
+        if(_editing){
+            _editing=false;
+            EditingText.noblink();
+        }else{
+            if(_state == TS_Back){
+                SettingManager.save();
+                dosingController.loadSetting();
+                return true;
+            }else{
+                _editing=true;
+                EditingText.blink();
+            }
         }
         return false;
     }
 protected:
     TSState _state;
+    bool _editing;
+
+    void _displayItems(){
+
+        if(_state == TS_TrigerType){
+            lcdPrint_P(0,0,strDosingControl,true);
+            lcdPrint_P(0,1,strControl,true);
+            _displayTrigerType();
+
+        }else if(_state == TS_DelayTime){
+            lcdPrint_P(0,1,strDelay,true);
+            lcd->setCursor(1,15);
+            lcd->write('s');
+            _displayTime(Settings.delayTime);            
+        }else if(_state == TS_CoolTime){
+            lcdPrint_P(0,1,strCoolTime,true);
+            lcd->setCursor(1,15);
+            lcd->write('s');
+            _displayTime(Settings.coolTime);            
+        }else{ // _state == TS_Back
+            lcdPrint_P(0,1,strBack,true);
+        }
+
+    }
 
     void _displayTrigerType(){
         if(Settings.trigerType){
             // sensor
-            lcdPrint_P(10,1,strSensor);
+            EditingText.setText_P(10,1,strSensor);
         }else{
-            lcdPrint_P(10,1,strButton);
+            EditingText.setText_P(10,1,strButton);
         }
+        EditingText.show();
     }
 //0123456789012345
 //Delay       5.0s
     void _displayTime(uint8_t val){
         float fvalue = (float)val * 0.5;
-        lcdPrintAt(12,1,fvalue,3,1);
-        // lcd->setCursor(1,15);
-        lcd->write('s');
+        EditingText.setNumber(12,1,fvalue,3,1);
+        EditingText.show();
     }
+    
 };
 
 /*********************************************************************************/
