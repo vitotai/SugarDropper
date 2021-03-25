@@ -1645,7 +1645,8 @@ protected:
 enum SoundSettinState{
     SSS_Button=0,
     SSS_DoseStart=1,
-    SSS_DoseEnd=2
+    SSS_DoseEnd=2,
+    SSS_Back=3
 };
 
 //const char strButton[] PROGMEM="Button";
@@ -1668,60 +1669,80 @@ public:
 
 
     void show(){
+        _editing=false;
         _state = SSS_Button;
-        _on = Settings.beepButton !=0;
         lcdPrint_P(0,0,strSoundSetting,true);
-        _displayLabel();
-        _displayOnOff();
+        
+        _displayItem();
     }
     
     void rotateForward(){
-        if(!_on){
-            _on = true;
-            _displayOnOff();
+        if(_editing){
+            if(!_on){
+                _on = true;
+                _displayOnOff();
+            }
+        }else{
+            if((uint8_t)_state >(uint8_t)SSS_Button){
+                _state = (SoundSettinState)( (uint8_t)_state - 1);
+                _displayItem();
+            }
         }
     }
 
     void rotateBackward(){
-        if(_on){
-            _on = false;
-            _displayOnOff();
+        if(_editing){
+            if(_on){
+                _on = false;
+                _displayOnOff();
+            }
+        }else{
+            if((uint8_t)_state <(uint8_t)SSS_Back){
+                _state = (SoundSettinState)( (uint8_t)_state + 1);
+                _displayItem();
+            }
         }
     }
 
     bool switchPushed(){
-        bool ret=false;
-        if(_state == SSS_DoseEnd) ret=true;
+        if(_editing){
+            _editing = false;
+            EditingText.noblink();
+             *(((uint8_t*)&Settings.beepButton) + _state) = _on? 1:0;
+        }else{
+            if(_state == SSS_Back){
+                SettingManager.save();
+                return true;
+            }else{
+                _editing = true;
+                EditingText.blink();
+            }
 
-        *(((uint8_t*)&Settings.beepButton) + _state) = _on? 1:0;
-        
-        _state = (SoundSettinState)( (uint8_t)_state + 1);
-
-        _on = *(((uint8_t*)&Settings.beepButton) + _state) != 0;
-
-        _displayLabel();
-        _displayOnOff();
-
-        if(ret){
-            SettingManager.save();
         }
-        return ret;
+        return false;
     }
 
 protected:
     SoundSettinState _state;
     bool _on;
+    bool _editing;
 
-    void _displayLabel(){
-        lcdPrint_P(0,1,SoundSettingLabels[_state],true);
+    void _displayItem(){
+        if(_state != SSS_Back){
+            lcdPrint_P(0,1,SoundSettingLabels[_state],true);
+            _on = *(((uint8_t*)&Settings.beepButton) + _state) != 0;
+            _displayOnOff();
+        }else{
+            lcdPrint_P(0,1,strBack,true);
+        }
     }
+
     void _displayOnOff(){
         if(_on){
-            lcd->setCursor(13,1);
-            lcd->write(' ');
-            lcdPrint_P(14,1,strOn);
+            EditingText.setText_P(14,1,strOn);
         }
-        else  lcdPrint_P(13,1,strOff);
+        else  EditingText.setText_P(13,1,strOff);
+        EditingText.show();
     }
 
 };
