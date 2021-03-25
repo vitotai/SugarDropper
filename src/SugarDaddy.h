@@ -327,7 +327,7 @@ struct _Settings{
     uint32_t footPrint;
     float stepPerMl;
     float shotAdjustment;
-    uint8_t trigerType;
+    uint8_t triggerType;
     uint8_t delayTime;  
     uint8_t coolTime;
     // the following fields musht not changed orders.
@@ -346,6 +346,9 @@ struct _Settings{
 #define CV2Set(v) (uint8_t)((v)*10)
 
 
+
+
+
 class SettingManagerClass{
 public:
     SettingManagerClass(){}
@@ -356,21 +359,47 @@ public:
         if(Settings.footPrint != FootprintPattern){
             Settings.footPrint = FootprintPattern;
             Settings.shotAdjustment =0;
-            Settings.trigerType =0;
+            Settings.triggerType =0;
             Settings.delayTime =1;
             Settings.coolTime = 2;
-
+            EEPROM.put(0,Settings);
             DBGPrintln("uninitialized data.");
             return false;
         }
         return true;
     }
     void save(){
-        EEPROM.put(0,Settings);
+        //EEPROM.put(0,Settings);
+    }
+    template <class T> int EEPROM_writeAnything(int ee, const T& value)
+    {
+        const byte* p = (const byte*)(const void*)&value;
+        unsigned int i;
+        for (i = 0; i < sizeof(value); i++)
+            EEPROM.write(ee++, *p++);
+        return i;
+    }
+
+    void write(uint8_t addr, uint8_t val){
+        EEPROM.update(addr,val);
+    }
+    void setValueAt(uint8_t offset, uint8_t val){
+        *(((uint8_t*)&Settings) + offset)=val;
+        EEPROM.update(offset,val);
     }
 };
-
 SettingManagerClass SettingManager;
+
+
+#define ReadSetting(a) Settings.a
+#define WriteSetting(a,v) { Settings.a=v; SettingManager.EEPROM_writeAnything(offsetof(_Settings,a) ,v);}
+
+#define ReadSettingAddress(a) *(((uint8_t*)&Settings) + (a))
+//#define WriteSettingAddress(a,v) *(((uint8_t*)&Settings) + (a))=v
+#define WriteSettingAddress(a,v) SettingManager.setValueAt(a,v)
+
+#define AddressOfSetting(a) offsetof(_Settings,a)
+
 
 /*********************************************************************************/
 //  Buzzer
@@ -418,6 +447,10 @@ public:
     void begin(){
 //        _stepper.setRPM(100);
         _stepper.begin();
+        DBGPrint(F("step per ml:"));
+        DBGPrint(ReadSetting(stepPerMl));
+        DBGPrint(F(" shotAdjustment:"));
+        DBGPrintln(ReadSetting(shotAdjustment));
     }
     
     bool running(){
@@ -427,8 +460,8 @@ public:
     void dose(float amount){
         if(_stepper.running()) return;
 
-        float adjustedValue =amount + Settings.shotAdjustment;
-        uint32_t steps =(uint32_t)(adjustedValue * Settings.stepPerMl);
+        float adjustedValue =amount + ReadSetting(shotAdjustment);
+        uint32_t steps =(uint32_t)(adjustedValue * ReadSetting(stepPerMl));
 
         _startDosingPos=_stepper.runSteps( steps );
 
@@ -458,7 +491,7 @@ public:
 
     void calibrate(float amount){
         uint32_t steps = _stepper.steps();
-        Settings.stepPerMl = (float)(steps - _startCalPos) / amount;
+        WriteSetting(stepPerMl, (float)(steps - _startCalPos) / amount);
         SettingManager.save();
 
         DBGPrint(F("*stop steps: "));
@@ -467,13 +500,13 @@ public:
         DBGPrint(F("*Calibrate to "));
         DBGPrint(amount,2);
         DBGPrint(F("ml steps/ml:"));
-        DBGPrintln(Settings.stepPerMl ,2);
+        DBGPrintln(ReadSetting(stepPerMl) ,2);
     }
     void resetDoseAdjustment(){
-        Settings.shotAdjustment = 0;
+        WriteSetting(shotAdjustment,0);
     }
     void setDoseAdjustment(float value){
-        Settings.shotAdjustment = value;
+        WriteSetting(shotAdjustment, value);
         SettingManager.save();
         DBGPrint(F("update shot adjustment:"));
         DBGPrintln(value);
@@ -484,7 +517,7 @@ public:
         uint32_t steps = _stepper.steps();
 //        DBGPrint(F("run steps:"));
 //        DBGPrintln(steps - _startDosingPos);
-        return (float)(steps - _startDosingPos) / Settings.stepPerMl;
+        return (float)(steps - _startDosingPos) / ReadSetting(stepPerMl);
     }
 
 protected:
@@ -534,9 +567,9 @@ public:
     }
     
     void loadSetting(){
-        _dosingDelay = Settings.delayTime * 500;
-        _coolTime = Settings.coolTime * 500;
-        _isPositionSensor = Settings.trigerType !=0;
+        _dosingDelay = ReadSetting(delayTime) * 500;
+        _coolTime = ReadSetting(coolTime) * 500;
+        _isPositionSensor = ReadSetting(triggerType) !=0;
     }
 
     // most be call every loop
@@ -558,9 +591,9 @@ public:
             _dosing = _doser.running();
             _processStateForDropingStateChange(_dosing);
             if(_dosing){
-                if(Settings.beepDoseStart) Buzzer.buzz(BeepDoseStart);
+                if(ReadSetting(beepDoseStart)) Buzzer.buzz(BeepDoseStart);
             }else{
-                if(Settings.beepDoseEnd)  Buzzer.buzz(BeepDoseEnd);
+                if(ReadSetting(beepDoseEnd))  Buzzer.buzz(BeepDoseEnd);
             }
             ret =true;
         }
@@ -614,7 +647,7 @@ protected:
         if(inPosition){
             if(_mode == DosingModeSingleShot || _mode == DosingModeManual){
                 if(_state==DSIdle){
-                   if(Settings.beepButton) Buzzer.buzz(BeepButton);
+                   if(ReadSetting(beepButton)) Buzzer.buzz(BeepButton);
                     lcdDosingSymbol(RevDrosingSymbolChar);
                     _timeToAction = millis() + _dosingDelay;
                     _state = DSPrepareToDose;
@@ -640,7 +673,7 @@ protected:
 
         if(_state==DSIdle){
             if(_mode == DosingModeSingleShot || _mode == DosingModeManual){
-                if(Settings.beepButton) Buzzer.buzz(BeepButton);
+                if(ReadSetting(beepButton)) Buzzer.buzz(BeepButton);
                 lcdDosingSymbol(RevDrosingSymbolChar);
 
                 _timeToAction = millis() + _dosingDelay;
@@ -648,7 +681,7 @@ protected:
             }
         }else if(_state==DSDosing){
             if(_mode == DosingModeManual){
-               if(Settings.beepButton) Buzzer.buzz(BeepButton);
+               if(ReadSetting(beepButton)) Buzzer.buzz(BeepButton);
                 // stop
                 _doser.stop();
                 // state change will be process when
@@ -906,7 +939,8 @@ public:
     ~AutoDoser(){}
 
     void show(){
-        if(Settings.inputBeer){
+        _inputBeer = ReadSetting(inputBeer);
+        if(_inputBeer){
             if(_beerVolume < MinimumBeerVolume ||_beerVolume > MaximumBeerVolume) _beerVolume = DefaultBeerVolume;
         }else{
             if(_amount < MinimumAmount || _amount > MaximumAmount) _amount = 5;
@@ -915,12 +949,12 @@ public:
         // "A:"
         lcdPrint_P(AccumulatedOutputStringCol,AccumulatedOutputRow,strTotal);
         // dosage unit
-        if(Settings.useWeight) lcdWriteAt(DosageAmountCol + DosageAmountSpace,DosageAmountRow,'g');
+        if(ReadSetting(useWeight)) lcdWriteAt(DosageAmountCol + DosageAmountSpace,DosageAmountRow,'g');
         else lcdPrint_P(DosageAmountCol + DosageAmountSpace,DosageAmountRow,strMl);
         // "#"
         lcdWriteAt(DosageCountSymbolCol,DosageCountRow,'#');
 
-        if(Settings.inputBeer){
+        if(_inputBeer){
             lcdPrint_P(BeerVolumeCol + BeerVolumeSpace,BeerVolumeRow,strMl);
             _updateBeerVolume();
             _calPrimingSugar();
@@ -934,7 +968,7 @@ public:
     }
 
     void rotateForward(){
-        if(Settings.inputBeer){
+        if(_inputBeer){
             if( (_beerVolume +10) < MaximumBeerVolume){
                 _beerVolume +=10;
 
@@ -950,7 +984,7 @@ public:
     }
     
     void rotateBackward(){
-        if(Settings.inputBeer){
+        if(_inputBeer){
             if( (_beerVolume -10) > MinimumBeerVolume){
                 _beerVolume -=10;
 
@@ -981,16 +1015,17 @@ protected:
     float _totalAmount;
     uint16_t _count;
     uint16_t _beerVolume;
+    bool _inputBeer;
 
     void _calPrimingSugar(){
         //
         DBGPrint(F("CD:"));
-        DBGPrint(Set2CV(Settings.carbonation));
+        DBGPrint(Set2CV(ReadSetting(carbonation)));
         DBGPrint(F(" beerTemperature:"));
-        DBGPrintln(Settings.beerTemperature);
+        DBGPrintln(ReadSetting(beerTemperature));
 
-        float ps=calculatePrimingSugar(Set2CV(Settings.carbonation),(float)_beerVolume/1000.0,(float)Settings.beerTemperature);
-        float weight = ps / (float)Settings.sugarRatio * 100.0;
+        float ps=calculatePrimingSugar(Set2CV(ReadSetting(carbonation)),(float)_beerVolume/1000.0,(float)ReadSetting(beerTemperature));
+        float weight = ps / (float)ReadSetting(sugarRatio) * 100.0;
         // if the unit is volume, calculate SG and derive volume
         // however, temperature might be a problem. ignore that for now
         DBGPrint(F("PS:"));
@@ -998,13 +1033,13 @@ protected:
         DBGPrint(F(" weight:"));
         DBGPrintln(weight);
 
-        if(Settings.useWeight){
+        if(ReadSetting(useWeight)){
             _amount = weight;
         }else{
             DBGPrint(F("SG:"));
-            DBGPrintln(brix2SG((float)Settings.sugarRatio));
+            DBGPrintln(brix2SG((float)ReadSetting(sugarRatio)));
 
-            _amount = weight / brix2SG((float)Settings.sugarRatio);
+            _amount = weight / brix2SG((float)ReadSetting(sugarRatio));
         }
     }
 
@@ -1047,7 +1082,7 @@ public:
 
     void show(){
         lcdPrint_P(0,0,strManual,true);
-        if(Settings.useWeight) lcdWriteAt(14,1,'g');
+        if(ReadSetting(useWeight)) lcdWriteAt(14,1,'g');
         else lcdPrint_P(14,1,strMl);
         lcd->setCursor(5,1);
         lcd->write('s');
@@ -1131,7 +1166,7 @@ public:
         _calVolume = 10;
         lcdPrint_P(0,0,strCalibration,true);
         lcdPrint_P(0,1,strCalBy);
-        if(Settings.useWeight) lcdWriteAt(14,1,'g');
+        if(ReadSetting(useWeight)) lcdWriteAt(14,1,'g');
         else lcdPrint_P(14,1,strMl);
 
         _updateVolumeDisplay(_calVolume);
@@ -1223,7 +1258,7 @@ protected:
     void _enterInputVolumeState(){
         _realVolume = _calVolume;
         lcdPrint_P(0,1,strAdjust,true);
-        if(Settings.useWeight) lcdWriteAt(14,1,'g');
+        if(ReadSetting(useWeight)) lcdWriteAt(14,1,'g');
         else    lcdPrint_P(14,1,strMl);
 
         _updateVolumeDisplay(_realVolume);
@@ -1245,7 +1280,7 @@ protected:
         lcdPrint_P(0,1,strRate,true);
         float rate =_realVolume / float(_accTime) * 1000;
         lcdPrintAt(6,1,rate,6,2);
-        if(Settings.useWeight) lcdPrint_P(12,1,strGramPerSec);
+        if(ReadSetting(useWeight)) lcdPrint_P(12,1,strGramPerSec);
         else lcdPrint_P(12,1,strMlPerSec);
     }
 };
@@ -1300,7 +1335,7 @@ public:
         lcdPrint_P(0,0,strCalibrateBy,true);
         // show Amount
         lcdPrint_P(0,1,strAmount);
-        if(Settings.useWeight) lcdWriteAt(14,1,'g');
+        if(ReadSetting(useWeight)) lcdWriteAt(14,1,'g');
         else lcdPrint_P(14,1,strMl);
 
         _showCalAmount();
@@ -1357,7 +1392,7 @@ public:
             // show extra volume
             lcdPrint_P(0,1,strRun);
             lcdPrintAt(3,1,_amount,6,2);
-            if(Settings.useWeight) lcdWriteAt(9,1,'g');
+            if(ReadSetting(useWeight)) lcdWriteAt(9,1,'g');
             else lcdPrint_P(9,1,strMl);
             lcd->setCursor(12,1);
             lcd->write('*');
@@ -1387,7 +1422,7 @@ public:
             //Adjsut   -0.12ml
             lcdPrint_P(0,1,strAdjust,true);
             lcdPrintAt(9,1,adjust,5,2);
-            if(Settings.useWeight) lcdWriteAt(14,1,'g');
+            if(ReadSetting(useWeight)) lcdWriteAt(14,1,'g');
             else lcdPrint_P(14,1,strMl);
         }else if(_state == CS_Result){
             return true;
@@ -1452,7 +1487,7 @@ Calibrating
         lcdClear(0,1,11);
         lcd->setCursor(12,1);
         lcd->write('/');
-        if(Settings.useWeight) lcdWriteAt(6,1,'g');
+        if(ReadSetting(useWeight)) lcdWriteAt(6,1,'g');
         else lcdPrint_P(6,1,strMl);
         lcdPrintAt(13,1,_count,3);
         _showProgress();
@@ -1471,7 +1506,7 @@ Calibrated to
     void _displayAdjusting(){
         lcdPrint_P(0,0,strCalibratedTo,true);
         lcdClearLine(1);
-        if(Settings.useWeight) lcdWriteAt(14,1,'g');
+        if(ReadSetting(useWeight)) lcdWriteAt(14,1,'g');
         else lcdPrint_P(14,1,strMl);
         _showAjustedAmount();
     }
@@ -1524,26 +1559,31 @@ public:
     void rotateForward(){
         if(_editing){
             if(_state == TS_TrigerType){
-                if(Settings.trigerType==0){
-                    Settings.trigerType=1;
+                if(_trigger==0){
+                    _trigger=1;
                     _displayTrigerType();
+                    _dirty = true;
                 }
-            }else if(_state == TS_DelayTime){
-                if(Settings.delayTime < MaximumDelayTime){
-                    Settings.delayTime ++;
-                    _displayTime(Settings.delayTime);
+            }else{ // if(_state == TS_DelayTime){
+                if(_timeval < MaximumDelayTime){
+                    _timeval ++;
+                    _displayTime(_timeval);
+                    _dirty = true;
                 }
-            }else if(_state == TS_CoolTime){
-                if(Settings.coolTime < MaximumCoolTime){
-                    Settings.coolTime ++;
-                    _displayTime(Settings.coolTime);
+            } /*else if(_state == TS_CoolTime){
+                if(_timeval < MaximumCoolTime){
+                    _timeval ++;
+                    _displayTime(_timeval);
+                    _dirty = true;
                 }
-            }
+            }   */         
+
         }else{
             // non editing
             if((int)_state > (int)TS_TrigerType){
                 _state =(TSState) ((int)_state -1);
                 _displayItems();
+                _dirty = true;
             }
         }
     }
@@ -1551,22 +1591,25 @@ public:
     void rotateBackward(){
         if(_editing){
             if(_state == TS_TrigerType){
-                if(Settings.trigerType!=0){
-                    Settings.trigerType=0;
+                if(_trigger!=0){
+                    _trigger=0;
                     _displayTrigerType();
+                    _dirty = true;
                 }
-            }else if(_state == TS_DelayTime){
-                if(Settings.delayTime > 0){
-                    Settings.delayTime --;
-                    _displayTime(Settings.delayTime);
+            }else{ // the same for DelayTime and CoolTime if(_state == TS_DelayTime){
+                if(_timeval > 0){
+                    _timeval --;
+                    _displayTime(_timeval);
+                    _dirty = true;
                 }
-            }else if(_state == TS_CoolTime){
-                if(Settings.coolTime > 0){
-                    Settings.coolTime --;
-                    _displayTime(Settings.coolTime);
-                }
+            /*}else if(_state == TS_CoolTime){
+                if(_timeval > 0){
+                    _timeval --;
+                    _displayTime(_timeval);
+                    _dirty = true;
+                } */
             }
-
+            
         }else{
             // non editing
             if((int)_state < (int)TS_Back){
@@ -1581,6 +1624,16 @@ public:
         if(_editing){
             _editing=false;
             EditingText.noblink();
+
+            if(_state == TS_TrigerType){
+                if(_dirty) WriteSetting(triggerType, _trigger);
+            }else if(_state == TS_DelayTime){
+                if(_dirty) WriteSetting(delayTime,_timeval);
+            }else if(_state == TS_CoolTime){
+                 if(_dirty) WriteSetting(coolTime,_timeval);
+            }
+            _dirty  = false;
+
         }else{
             if(_state == TS_Back){
                 SettingManager.save();
@@ -1596,32 +1649,38 @@ public:
 protected:
     TSState _state;
     bool _editing;
+    uint8_t _trigger;
+    bool _dirty;
+    uint8_t _timeval;
 
     void _displayItems(){
 
         if(_state == TS_TrigerType){
             lcdPrint_P(0,0,strDosingControl,true);
             lcdPrint_P(0,1,strControl,true);
+            _trigger = ReadSetting(triggerType);
             _displayTrigerType();
 
         }else if(_state == TS_DelayTime){
             lcdPrint_P(0,1,strDelay,true);
             lcd->setCursor(1,15);
             lcd->write('s');
-            _displayTime(Settings.delayTime);            
+            _timeval = ReadSetting(delayTime);
+            _displayTime(_timeval);            
         }else if(_state == TS_CoolTime){
             lcdPrint_P(0,1,strCoolTime,true);
             lcd->setCursor(1,15);
             lcd->write('s');
-            _displayTime(Settings.coolTime);            
+            _timeval = ReadSetting(coolTime);
+            _displayTime(_timeval);            
         }else{ // _state == TS_Back
             lcdPrint_P(0,1,strBack,true);
         }
-
+        _dirty = false;
     }
 
     void _displayTrigerType(){
-        if(Settings.trigerType){
+        if(_trigger){
             // sensor
             EditingText.setText_P(10,1,strSensor);
         }else{
@@ -1680,6 +1739,8 @@ public:
         if(_editing){
             if(!_on){
                 _on = true;
+                _dirty = true;
+                EditingText.hide();
                 _displayOnOff();
             }
         }else{
@@ -1694,6 +1755,8 @@ public:
         if(_editing){
             if(_on){
                 _on = false;
+                _dirty = true;
+                EditingText.hide();
                 _displayOnOff();
             }
         }else{
@@ -1708,7 +1771,8 @@ public:
         if(_editing){
             _editing = false;
             EditingText.noblink();
-             *(((uint8_t*)&Settings.beepButton) + _state) = _on? 1:0;
+            if(_dirty) WriteSettingAddress(AddressOfSetting(beepButton) + _state, _on? 1:0);
+            _dirty = false;
         }else{
             if(_state == SSS_Back){
                 SettingManager.save();
@@ -1726,11 +1790,13 @@ protected:
     SoundSettinState _state;
     bool _on;
     bool _editing;
+    bool _dirty;
 
     void _displayItem(){
         if(_state != SSS_Back){
             lcdPrint_P(0,1,SoundSettingLabels[_state],true);
-            _on = *(((uint8_t*)&Settings.beepButton) + _state) != 0;
+            _on =ReadSettingAddress(AddressOfSetting(beepButton) + _state) != 0;
+            _dirty =false;
             _displayOnOff();
         }else{
             lcdPrint_P(0,1,strBack,true);
@@ -1764,15 +1830,17 @@ public:
     void show(){
         _idx=0;
         _editing = false;
+        _dirty = false;
         lcdPrint_P(0,0,strUnitSetting,true);
         _showItem();
     }
     
     void rotateForward(){
         if(_editing){
-            if(Settings.useWeight ==0){
-                Settings.useWeight =1;
+            if(_useWeight ==0){
+                _useWeight =1;
                 _printValue();
+                _dirty =true;
             }
         }else{
             if(_idx >0){
@@ -1784,9 +1852,10 @@ public:
 
     void rotateBackward(){
         if(_editing){
-            if(Settings.useWeight !=0){
-                Settings.useWeight =0;
+            if(_useWeight !=0){
+                _useWeight =0;
                 _printValue();
+                _dirty =true;
             }
         }else{
             if(_idx <1){
@@ -1800,12 +1869,15 @@ public:
         if(_editing){
             _editing=false;
             EditingText.noblink();
+            if(_dirty){
+                WriteSetting(useWeight,_useWeight);
+            }
         }else{
             if(_idx ==0){
                 _editing=true;
                 EditingText.blink();
             }else{
-                SettingManager.save();
+                if(_dirty) SettingManager.save();
                 return true;
             }
         }
@@ -1814,10 +1886,13 @@ public:
 
 protected:
     bool _editing;
+    bool _dirty;
+    uint8_t _useWeight;
     uint8_t _idx;
     void _showItem(){
         if(_idx ==0){
             lcdPrint_P(0,1,strUse,true);
+            _useWeight =ReadSetting(useWeight);
             _printValue();
         }else{
              lcdPrint_P(0,1,strBack,true);
@@ -1825,7 +1900,7 @@ protected:
 
     }
     void _printValue(){
-        EditingText.setText_P(10,1, Settings.useWeight? strWeight:strVolume);
+        EditingText.setText_P(10,1, _useWeight? strWeight:strVolume);
         EditingText.show();
     }
 };
@@ -1880,18 +1955,19 @@ public:
     void rotateForward(){
         if(_editing){
             if(_setIdx ==IndexInput){
-                if(Settings.inputBeer) Settings.inputBeer=0;
+                if(_inputBeer) _inputBeer=0;
                 _printInputValue();
             }else if(_setIdx ==IndexSugar){
-                if(Settings.sugarRatio<100) Settings.sugarRatio ++;
+                if(_sugarRatio<100) _sugarRatio ++;
                 _printSugarRatio();
             }else if(_setIdx ==IndexCo2Volume){
-                if(Settings.carbonation < HighestCarbonation) Settings.carbonation += 1;
+                if(_carbonation < HighestCarbonation) _carbonation += 1;
                 _printCo2Volume();
             }else if(_setIdx ==IndexBeerTemp){
-                if(Settings.beerTemperature < MaxBeerTemp) Settings.beerTemperature ++;
+                if(_beerTemperature < MaxBeerTemp) _beerTemperature ++;
                 _printBeerTemp();
             }
+            _dirty = true;
         }else{
             if(_setIdx > IndexInput){
                 _setIdx --;
@@ -1904,20 +1980,19 @@ public:
     void rotateBackward(){
         if(_editing){
             if(_setIdx ==IndexInput){
-                if(Settings.inputBeer ==0) Settings.inputBeer=1;
+                if(_inputBeer ==0) _inputBeer=1;
                 _printInputValue();
             } if(_setIdx ==IndexSugar){
-                if(Settings.sugarRatio>0) Settings.sugarRatio --;
+                if(_sugarRatio>0) _sugarRatio --;
                 _printSugarRatio();
             }else if(_setIdx ==IndexCo2Volume){
-                DBGPrint(F("Carbonation:"));
-                DBGPrintln(Settings.carbonation);
-                if(Settings.carbonation > LowestCarbonation) Settings.carbonation -= 1;
+                if(_carbonation > LowestCarbonation) _carbonation -= 1;
                 _printCo2Volume();
             }else if(_setIdx ==IndexBeerTemp){
-                if(Settings.beerTemperature > MinBeerTemp) Settings.beerTemperature --;
+                if(_beerTemperature > MinBeerTemp) _beerTemperature --;
                 _printBeerTemp();
             }
+            _dirty =true;
         }else{
             if(_setIdx<IndexBack){
                 _setIdx ++;
@@ -1929,6 +2004,17 @@ public:
         if(_editing){
             _editing = false;
             EditingText.noblink();
+            if(_setIdx ==IndexInput){
+                if(_dirty) WriteSetting(inputBeer,_inputBeer);
+            } if(_setIdx ==IndexSugar){
+                if(_dirty) WriteSetting(sugarRatio,_sugarRatio);
+            }else if(_setIdx ==IndexCo2Volume){
+                if(_dirty) WriteSetting(carbonation,_carbonation);
+            }else if(_setIdx ==IndexBeerTemp){
+                if(_dirty) WriteSetting(beerTemperature,_beerTemperature);
+            }
+            _dirty =false;
+
         }else{
             if(_setIdx == IndexBack){
                 SettingManager.save();
@@ -1943,10 +2029,16 @@ public:
 protected:
     uint8_t _setIdx;
     bool _editing;
+    bool _dirty;
+    int8_t _beerTemperature;
+    uint8_t _carbonation;
+    uint8_t _sugarRatio;
+    uint8_t _inputBeer;
 
     void _showItem(){
         if(_setIdx ==IndexInput){
             lcdPrint_P(0,1,strInput);
+            _inputBeer = ReadSetting(inputBeer);
             _printInputValue();
 
         }else if(_setIdx ==IndexSugar){
@@ -1955,26 +2047,30 @@ protected:
             lcd->write(DegreeChar);
             lcd->write('B');
             lcd->write('x');
-            if(Settings.sugarRatio>100) Settings.sugarRatio=100;
+            _sugarRatio = ReadSetting(sugarRatio);
+            if(_sugarRatio>100) _sugarRatio=100;
             _printSugarRatio();
         }else if(_setIdx ==IndexCo2Volume){
             lcdPrint_P(0,1, strCo2Vol, true);
-            if(Settings.carbonation < LowestCarbonation) Settings.carbonation = LowestCarbonation;
-            else if(Settings.carbonation > HighestCarbonation) Settings.carbonation = HighestCarbonation;
+            _carbonation = ReadSetting(carbonation);
+            if(_carbonation < LowestCarbonation) _carbonation = LowestCarbonation;
+            else if(_carbonation > HighestCarbonation) _carbonation = HighestCarbonation;
             _printCo2Volume();
         }else if(_setIdx ==IndexBeerTemp){    
             lcdPrint_P(0,1,strBeerTemp,true);
             lcd->setCursor(14,1);
             lcd->write(DegreeChar);
             lcd->write('C');
+            _beerTemperature = ReadSetting(beerTemperature);
             _printBeerTemp();
         }else if(_setIdx == IndexBack){
             lcdPrint_P(0,1,strBack,true);
         }
+        _dirty = false;
     }
 
     void _printInputValue(){
-        if(Settings.inputBeer){
+        if(_inputBeer){
             EditingText.setText_P(8,1,strBeerVol);
         }else{
             EditingText.setText_P(8,1,strXSugar);
@@ -1983,16 +2079,16 @@ protected:
     }
 
     void _printSugarRatio(){
-        EditingText.setNumber(10,1,Settings.sugarRatio,3);
+        EditingText.setNumber(10,1,_sugarRatio,3);
         EditingText.show();
     }
     void _printCo2Volume(){
-        EditingText.setNumber(13,1,Set2CV(Settings.carbonation),3,1);
+        EditingText.setNumber(13,1,Set2CV(_carbonation),3,1);
         EditingText.show();
     }
 
     void _printBeerTemp(){
-        EditingText.setNumber(12,1,Settings.beerTemperature,2);
+        EditingText.setNumber(12,1,_beerTemperature,2);
         EditingText.show();
     }
 
