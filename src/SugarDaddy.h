@@ -1842,6 +1842,7 @@ protected:
 #define IndexSugar 1
 #define IndexCo2Volume 2
 #define IndexBeerTemp 3
+#define IndexBack 4
 
 #define LowestCarbonation 15
 #define HighestCarbonation 45
@@ -1870,49 +1871,85 @@ public:
     PrimingSetting(){}
     ~PrimingSetting(){}
       void show(){
+        _editing = false;
         _setIdx =0;
         lcdPrint_P(0,0,strUnitSetting,true);
-        lcdPrint_P(0,1,strInput);
-        _printInputValue();
+        _showItem();
     }
 
     void rotateForward(){
-        if(_setIdx ==IndexInput){
-            if(Settings.inputBeer) Settings.inputBeer=0;
-            _printInputValue();
-        }else if(_setIdx ==IndexSugar){
-            if(Settings.sugarRatio<100) Settings.sugarRatio ++;
-            _printSugarRatio();
-        }else if(_setIdx ==IndexCo2Volume){
-            if(Settings.carbonation < HighestCarbonation) Settings.carbonation += 1;
-            _printCo2Volume();
-        }else if(_setIdx ==IndexBeerTemp){
-            if(Settings.beerTemperature < MaxBeerTemp) Settings.beerTemperature ++;
-            _printBeerTemp();
+        if(_editing){
+            if(_setIdx ==IndexInput){
+                if(Settings.inputBeer) Settings.inputBeer=0;
+                _printInputValue();
+            }else if(_setIdx ==IndexSugar){
+                if(Settings.sugarRatio<100) Settings.sugarRatio ++;
+                _printSugarRatio();
+            }else if(_setIdx ==IndexCo2Volume){
+                if(Settings.carbonation < HighestCarbonation) Settings.carbonation += 1;
+                _printCo2Volume();
+            }else if(_setIdx ==IndexBeerTemp){
+                if(Settings.beerTemperature < MaxBeerTemp) Settings.beerTemperature ++;
+                _printBeerTemp();
+            }
+        }else{
+            if(_setIdx > IndexInput){
+                _setIdx --;
+                _showItem();
+            }
         }
 
     }
     
     void rotateBackward(){
-        if(_setIdx ==IndexInput){
-            if(Settings.inputBeer ==0) Settings.inputBeer=1;
-            _printInputValue();
-        } if(_setIdx ==IndexSugar){
-            if(Settings.sugarRatio>0) Settings.sugarRatio --;
-            _printSugarRatio();
-        }else if(_setIdx ==IndexCo2Volume){
-            DBGPrint(F("Carbonation:"));
-            DBGPrintln(Settings.carbonation);
-            if(Settings.carbonation > LowestCarbonation) Settings.carbonation -= 1;
-            _printCo2Volume();
-        }else if(_setIdx ==IndexBeerTemp){
-            if(Settings.beerTemperature > MinBeerTemp) Settings.beerTemperature --;
-            _printBeerTemp();
+        if(_editing){
+            if(_setIdx ==IndexInput){
+                if(Settings.inputBeer ==0) Settings.inputBeer=1;
+                _printInputValue();
+            } if(_setIdx ==IndexSugar){
+                if(Settings.sugarRatio>0) Settings.sugarRatio --;
+                _printSugarRatio();
+            }else if(_setIdx ==IndexCo2Volume){
+                DBGPrint(F("Carbonation:"));
+                DBGPrintln(Settings.carbonation);
+                if(Settings.carbonation > LowestCarbonation) Settings.carbonation -= 1;
+                _printCo2Volume();
+            }else if(_setIdx ==IndexBeerTemp){
+                if(Settings.beerTemperature > MinBeerTemp) Settings.beerTemperature --;
+                _printBeerTemp();
+            }
+        }else{
+            if(_setIdx<IndexBack){
+                _setIdx ++;
+                _showItem();
+            }
         }
     }
     bool switchPushed(){
+        if(_editing){
+            _editing = false;
+            EditingText.noblink();
+        }else{
+            if(_setIdx == IndexBack){
+                SettingManager.save();
+                return true;
+            }else{
+                _editing = true;
+                EditingText.blink();
+            }
+        }
+        return false;
+    }
+protected:
+    uint8_t _setIdx;
+    bool _editing;
+
+    void _showItem(){
         if(_setIdx ==IndexInput){
-            _setIdx = IndexSugar;
+            lcdPrint_P(0,1,strInput);
+            _printInputValue();
+
+        }else if(_setIdx ==IndexSugar){
             lcdPrint_P(0,1,strBrix,true);
             lcd->setCursor(13,1);
             lcd->write(DegreeChar);
@@ -1920,44 +1957,43 @@ public:
             lcd->write('x');
             if(Settings.sugarRatio>100) Settings.sugarRatio=100;
             _printSugarRatio();
-        }else if(_setIdx ==IndexSugar){
-            _setIdx = IndexCo2Volume;
+        }else if(_setIdx ==IndexCo2Volume){
             lcdPrint_P(0,1, strCo2Vol, true);
             if(Settings.carbonation < LowestCarbonation) Settings.carbonation = LowestCarbonation;
             else if(Settings.carbonation > HighestCarbonation) Settings.carbonation = HighestCarbonation;
             _printCo2Volume();
-        }else if(_setIdx ==IndexCo2Volume){    
-            _setIdx =IndexBeerTemp;
+        }else if(_setIdx ==IndexBeerTemp){    
             lcdPrint_P(0,1,strBeerTemp,true);
             lcd->setCursor(14,1);
             lcd->write(DegreeChar);
             lcd->write('C');
             _printBeerTemp();
-        }else if(_setIdx == IndexBeerTemp){
-            SettingManager.save();
-            return true;
+        }else if(_setIdx == IndexBack){
+            lcdPrint_P(0,1,strBack,true);
         }
-        return false;
     }
-protected:
-    uint8_t _setIdx;
+
     void _printInputValue(){
         if(Settings.inputBeer){
-            lcdPrint_P(8,1,strBeerVol);
+            EditingText.setText_P(8,1,strBeerVol);
         }else{
-            lcdPrint_P(8,1,strXSugar);
+            EditingText.setText_P(8,1,strXSugar);
         }
+        EditingText.show();
     }
 
     void _printSugarRatio(){
-        lcdPrintAt(10,1,Settings.sugarRatio,3);
+        EditingText.setNumber(10,1,Settings.sugarRatio,3);
+        EditingText.show();
     }
     void _printCo2Volume(){
-        lcdPrintAt(13,1,Set2CV(Settings.carbonation),3,1);
+        EditingText.setNumber(13,1,Set2CV(Settings.carbonation),3,1);
+        EditingText.show();
     }
 
     void _printBeerTemp(){
-        lcdPrintAt(12,1,Settings.beerTemperature,2);
+        EditingText.setNumber(12,1,Settings.beerTemperature,2);
+        EditingText.show();
     }
 
 };
