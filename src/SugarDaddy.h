@@ -49,7 +49,7 @@
 #define BeepDoseStart 300
 #define BeepDoseEnd 550
 
-
+#define BlinkingTime 350
 
 typedef enum _SugarAppId{
     SugarAppMenu,
@@ -184,12 +184,106 @@ byte lcdClear(byte col,byte row,byte number){
     for(byte i=0;i<number;i++) lcd->write(' ');
     return number;
 }
-
+void  lcdClearLine(byte row){
+    lcdClear(0,row,LcdColNumber);
+}
 
 void lcdDosingSymbol(char sym){
     lcd->setCursor(15,0);
     lcd->write(sym);
 }
+inline void lcdSetCursor(byte col, byte row){
+    lcd->setCursor(col,row);
+}
+inline void lcdWrite(char ch){
+    lcd->write(ch);
+}
+/**********************************************************************************/
+// Blinking Text
+class EditingTextClass{
+public:
+    EditingTextClass():_blinking(false){}
+    ~EditingTextClass(){}
+
+    void setNumber(uint8_t col, uint8_t row,int number,uint8_t space){
+         _col=col; _row = row;
+        _len=sprintInt(_number,number);
+        _number[_len]='\0';
+        _space = space;
+        _isText=false;
+    }
+
+    void setNumber(uint8_t col, uint8_t row,float number,uint8_t space,uint8_t precision){
+         _col=col; _row = row;
+        _len=sprintFloat(_number,number,precision);
+        _number[_len]='\0';
+        _space =space;
+        _isText=false;
+    }
+
+    void setText_P(uint8_t col, uint8_t row,const char* text){
+         _col=col; _row = row;
+        _isText=true;
+        _text = text;
+        _space = strlen_P(text);
+    }
+
+    void blink(){
+        if(_blinking) return;
+        _hiding =false;
+        _blinking=true;
+    }
+    
+    void noblink(){
+        if(!_blinking) return;
+        _blinking=false;
+        if(_hiding) show();
+    }
+    
+    void show(){
+        if(_isText){
+            lcdPrint_P(_col,_row,_text);
+        }else{
+
+            lcdSetCursor(_col,_row);
+            uint8_t lead = _space - _len;
+            for(int i=0;i<lead;i++) lcdWrite(' ');
+            const char* p=_number;
+            while(*p){
+                lcd->write(*p);
+                p++;
+            }
+        }
+    }
+    
+    void hide(){
+        lcdSetCursor(_col,_row);
+        for(int i=0;i<_space;i++) lcdWrite(' ');
+    }
+
+    void loop(){
+        if(!_blinking) return;
+        if(millis() - _blinkTime > BlinkingTime){
+            if(_hiding)show();
+            else hide();
+            _hiding = !_hiding;
+            _blinkTime = millis();
+        }
+
+    }
+protected:
+    uint32_t _blinkTime;
+    bool _blinking;
+    bool _hiding;
+    uint8_t _col;
+    uint8_t _row;
+
+    bool _isText;
+    const char *_text;
+    char _number[17];
+    uint8_t _space;
+    uint8_t _len;
+}EditingText;
 
 /*********************************************************************************/
 // Priming sugar calculator
@@ -1070,6 +1164,7 @@ public:
               // what if "running now"?
             }
         }else if(_mode == Cal_InputVolume){            
+            EditingText.noblink();
             _finishCalibrate();
             SettingManager.save();
             // display the result
@@ -1089,6 +1184,7 @@ public:
             _dosed=true;
             _dosing = true;
         }else{
+            EditingText.noblink();
             _dosing =false;
             _accTime += millis() - _startTime;
             lcdPrint_P(0,1,strEnter,true);
@@ -1104,10 +1200,14 @@ protected:
     uint32_t _accTime;
 
     void _enterCalibratingState(){
+        EditingText.noblink();
         _dosed=false;
         dosingController.resetDoseAdjustment();
         dosingController.startCalibrate();
-        lcdPrint_P(0,1,strRunDoser,true);
+        //lcdPrint_P(0,1,strRunDoser,true);
+        lcdClearLine(1);
+        EditingText.setText_P(0,1,strRunDoser);
+        EditingText.blink();
         dosingController.setMode(DosingModeManual);
         _accTime =0;
     }
@@ -1123,7 +1223,9 @@ protected:
     }
 
     void _updateVolumeDisplay(float vol){
-        lcdPrintAt(7,1,vol,6,2);
+        //lcdPrintAt(7,1,vol,6,2);
+        EditingText.setNumber(7,1,vol,6,2);
+        EditingText.blink();
     }
 
     void _finishCalibrate(){
@@ -1804,6 +1906,7 @@ public:
         }
 
         Buzzer.loop();
+        EditingText.loop();
     }
 
     void switchTo(SugarAppId mode){
