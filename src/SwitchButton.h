@@ -79,12 +79,12 @@ public:
 
 void switchPressed1()
 {
-    SwitchButton::changeIsrHandler(1);
+    SwitchButton::changeIsrHandler(0);
 }  // end of switchPressed
 
 void switchPressed2()
 {
-    SwitchButton::changeIsrHandler(2);
+    SwitchButton::changeIsrHandler(1);
 }  // end of switchPressed
 
 uint8_t SwitchButton::isrCount=0;
