@@ -4,13 +4,6 @@
 // a implementation of "timed" pump
 // Not good programming pratice, but using static member is tidious.
 
-static byte _actuatorPin;
-static volatile bool _running;
-static volatile bool _autoStop;
-static volatile uint32_t _autoStopTime;
-
-static volatile uint32_t _accRunTime;
-static volatile uint32_t _startTime;
 
 // using 1ms as "step", but 10ms (100Hz) interrupt period
 // let flow rate @ 150ml, 10ms resolution =  150/60/100 = 0.025ml far more than enough
@@ -19,26 +12,32 @@ static volatile uint32_t _startTime;
 
 #define OverflowCompare 155
 
-static inline void powerOn(){
+void Stepper::_powerOn(){
     _running=true;
     digitalWrite(_actuatorPin,LOW);
     _startTime=millis();
 }
 
-static inline void powerOff(){
+void Stepper::_powerOff(){
     digitalWrite(_actuatorPin,HIGH);
     _accRunTime += millis()  - _startTime;
     _running=false;
 }
 
-ISR (TIMER1_COMPA_vect) 
-{
+void Stepper::timerTick(){
     if(_autoStop){
         if(millis() >= _autoStopTime){
             _autoStop=false;
-            powerOff();
+            _powerOff();
         }
     }
+}
+static Stepper* _stepers[2]={NULL,NULL};
+static uint8_t _stepperCount=0;
+ISR (TIMER1_COMPA_vect) 
+{
+    if(_stepers[0]) _stepers[0]->timerTick();
+    if(_stepers[1]) _stepers[1]->timerTick();
 }
 
 static void _setupTimer()
@@ -77,16 +76,22 @@ Stepper::Stepper(byte stepPin,byte dirPin){
 void Stepper::begin(){
     _accRunTime =0;
     pinMode(_actuatorPin, OUTPUT);
-    powerOff();
-    _setupTimer();
+    _powerOff();
+
+    if(_stepperCount < 2){
+        _stepers[_stepperCount] = this;
+        _stepperCount ++;
+    }
+
+    if(_stepperCount==1) _setupTimer();
 }
 
 uint32_t Stepper::run(){
-    powerOn();
+    _powerOn();
     return _accRunTime;
 }
 void Stepper::stop(){
-    powerOff();
+    _powerOff();
 }
 
 bool Stepper::running(){
@@ -96,12 +101,12 @@ bool Stepper::running(){
 uint32_t Stepper::runSteps(unsigned long step){
     // in miniseconds
     _autoStopTime = millis() + step;
-    powerOn();
+    _powerOn();
     _autoStop= true;
     return _accRunTime;
 }
 
-unsigned long Stepper::steps(){
+uint32_t Stepper::steps(){
     return _accRunTime + (_running? (millis()-_startTime):0);
 }
 

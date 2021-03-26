@@ -16,4 +16,17 @@ public:
 
     void begin();
     uint32_t startTime();
+
+    void timerTick();
+protected:
+    byte _actuatorPin;
+    bool _running;
+    bool _autoStop;
+    uint32_t _autoStopTime;
+
+    uint32_t _accRunTime;
+    uint32_t _startTime;
+
+    void _powerOn();
+    void _powerOff();
 };
