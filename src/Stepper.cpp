@@ -69,11 +69,11 @@ uint32_t Stepper::startTime(){
     return _startTime;
 }
 
-Stepper::Stepper(byte stepPin,byte dirPin){
-    _actuatorPin = stepPin;
+Stepper::Stepper(){
 }
 
-void Stepper::begin(){
+void Stepper::begin(byte stepPin){
+    _actuatorPin = stepPin;
     _accRunTime =0;
     pinMode(_actuatorPin, OUTPUT);
     _powerOff();

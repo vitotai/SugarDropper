@@ -441,12 +441,12 @@ protected:
 //  Doser control
 class SugarDoser{
 public:
-    SugarDoser():_stepper(STEP_PIN,DIR_PIN){}
+    SugarDoser(){}
     ~SugarDoser(){}
 
-    void begin(){
-//        _stepper.setRPM(100);
-        _stepper.begin();
+    void begin(byte pin){
+        _stepper.begin(pin);
+
         DBGPrint(F("step per ml:"));
         DBGPrint(ReadSetting(stepPerMl));
         DBGPrint(F(" shotAdjustment:"));
@@ -560,11 +560,11 @@ public:
         }
     }
     
-    void begin(SwitchButton& switchButton){
+    void begin(SwitchButton& switchButton,byte pin){
         _mode = DosingModeDisabled;
         _switchButton = & switchButton;
         loadSetting();
-        _doser.begin();
+        _doser.begin(pin);
     }
     
     void loadSetting(){
@@ -2114,7 +2114,7 @@ public:
 
         switchButton1.begin(BUTTON_PIN);
         
-        dosingController.begin(switchButton1);
+        dosingController.begin(switchButton1,STEP_PIN);
 
         if(initialized) _running = &_menuHandler;
         else _running = &_sugarCalibrate;

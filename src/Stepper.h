@@ -2,7 +2,7 @@
 
 class Stepper{
 public:
-    Stepper(byte stepPin,byte dirPin);
+    Stepper();
     ~Stepper(){}
 
     uint32_t run();
@@ -14,7 +14,7 @@ public:
     void setDirectiionForward(bool forward);
     void setRPM(unsigned long rpm);
 
-    void begin();
+    void begin(byte stepPin);
     uint32_t startTime();
 
     void timerTick();
