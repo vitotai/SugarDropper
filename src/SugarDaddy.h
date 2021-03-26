@@ -560,8 +560,9 @@ public:
         }
     }
     
-    void begin(){
+    void begin(SwitchButton& switchButton){
         _mode = DosingModeDisabled;
+        _switchButton = & switchButton;
         loadSetting();
         _doser.begin();
     }
@@ -576,13 +577,13 @@ public:
     bool isDosingStateChanged(){
         bool ret=false;
         if(_isPositionSensor){
-            if(SwitchButton::statusChanged()){
-                _handleSensorState(SwitchButton::pressed());
+            if(_switchButton->statusChanged()){
+                _handleSensorState(_switchButton->pressed());
             }
         }else{
             if(_mode != DosingModeDisabled){
-                if(SwitchButton::statusChanged()){
-                     _handleButtonAction(SwitchButton::pressed());
+                if(_switchButton->statusChanged()){
+                     _handleButtonAction(_switchButton->pressed());
                 }
             }
         }
@@ -632,7 +633,8 @@ public:
     }
 protected:
     SugarDoser _doser;
-
+    SwitchButton* _switchButton;
+    
     bool _dosing;
     float _dosage;
     DosingMode _mode;
@@ -2110,9 +2112,9 @@ public:
         Buzzer.begin();
         lcdInitialize();
 
-        SwitchButton::begin(BUTTON_PIN);
+        switchButton1.begin(BUTTON_PIN);
         
-        dosingController.begin();
+        dosingController.begin(switchButton1);
 
         if(initialized) _running = &_menuHandler;
         else _running = &_sugarCalibrate;

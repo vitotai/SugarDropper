@@ -2,29 +2,51 @@
 
 #define DebounceTime 15
 
-void switchPressed ();
+void switchPressed1 ();
+void switchPressed2 ();
 
 class SwitchButton{
-    static int _pin;
-    static bool _pressed; // physical status
+    int _pin;
+    bool _pressed; // physical status
     
-    static bool _logicalPressed;  // current status
+    bool _logicalPressed;  // current status
 
-    static uint32_t _changedTime;
+    uint32_t _changedTime;
+
+    static SwitchButton* objs[2];
+    static uint8_t isrCount;
 public:
     SwitchButton(){}
     ~SwitchButton(){}
 
-    static void begin(int pin){ 
+    uint8_t alloctIsr(){
+        if(isrCount < 2){
+            objs[isrCount]=this;
+            isrCount ++;
+            return isrCount;
+        }
+        // should alert. ....
+        return isrCount;
+    }
+
+    void begin(int pin){ 
+        _pressed=false;
+        _logicalPressed=false;
+        _changedTime=0;
         _pin = pin;
 		pinMode(_pin, INPUT_PULLUP);
 		digitalWrite(_pin, HIGH);
-        attachInterrupt(digitalPinToInterrupt(_pin), switchPressed, CHANGE);
+
+        if(alloctIsr() == 1){
+            attachInterrupt(digitalPinToInterrupt(_pin), switchPressed1, CHANGE);
+        }else{
+            attachInterrupt(digitalPinToInterrupt(_pin), switchPressed2, CHANGE);
+        }
     }
 
-    static bool pressed(){ return _logicalPressed; }
+    bool pressed(){ return _logicalPressed; }
 
-    static bool statusChanged(){
+    bool statusChanged(){
         if( _logicalPressed == _pressed){
             // status unchanged. fine
             return false;
@@ -46,18 +68,26 @@ public:
         return false;
     }
 
-    static void changeIsrHandler(){
+    void isrHandler(){
         _pressed = digitalRead(_pin) == LOW;
         _changedTime= millis();
     }
+    static void changeIsrHandler(uint8_t idx){
+        objs[idx]->isrHandler();
+    }
 };
 
-void switchPressed ()
+void switchPressed1()
 {
-    SwitchButton::changeIsrHandler();
+    SwitchButton::changeIsrHandler(1);
 }  // end of switchPressed
 
-int SwitchButton::_pin;
-bool SwitchButton::_pressed=false;
-bool SwitchButton::_logicalPressed=false;
-uint32_t SwitchButton::_changedTime=0;
+void switchPressed2()
+{
+    SwitchButton::changeIsrHandler(2);
+}  // end of switchPressed
+
+uint8_t SwitchButton::isrCount=0;
+SwitchButton* SwitchButton::objs[2];
+
+SwitchButton switchButton1;

@@ -61,4 +61,4 @@ Sensor works differently. A small value of delay is necessary because usually th
 
 # Note
 It is a simple but helpful, yet fun, project. Use the code as you like, and modify the code whatever you want.
-Don't ask for imperial unit support.
+Don't ask for Imperial unit support.
