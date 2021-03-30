@@ -52,9 +52,12 @@
 #define BeepDoseStart 300
 #define BeepDoseEnd 550
 
-#define BlinkingShowTime 500
-#define BlinkingHideTime 250
-#define MaximumDoserRatio 99
+#define BlinkingShowTime 600
+#define BlinkingHideTime 150
+
+#define MaximumDoserRatioInteger 300
+
+#define RationIncStepBeer 0.001
 
 typedef enum _SugarAppId{
     SugarAppMenu,
@@ -2451,7 +2454,7 @@ const char strSecondaryDoser[] PROGMEM="SecondaryDoser";
 const char strEnable[] PROGMEM =  "Enable";
 const char strYes[] PROGMEM = "Yes";
 const char strNo[] PROGMEM =  "No ";
-const char strRatio[] PROGMEM = "AutoRatio";
+const char strRatio[] PROGMEM = "Auto(%)";
 
 
 #define SecondaryIndexEnable 0
@@ -2482,15 +2485,16 @@ public:
                      EditingText.setText_P(13,1,strYes);
                  }
              }else if(_setIdx ==SecondaryIndexRatioInputInteger){
-                 if(_ratioInteger < MaximumDoserRatio){
+                 if(_ratioInteger < MaximumDoserRatioInteger){
                      _ratioInteger ++;
                      _updateIntegerPart();
                  } 
              }else{
-                 if(_ratioFraction < 99){
-                     _ratioFraction ++;
-                     _updateFractionPart();
-                 } 
+                _ratioFraction ++;
+                if(_ratioFraction > 99){
+                     _ratioFraction=0;
+                }
+                _updateFractionPart();
              }
 
         }else{
@@ -2513,11 +2517,12 @@ public:
                      _ratioInteger --;
                      _updateIntegerPart();
                  } 
-             }else{
-                 if(_ratioFraction > 0){
-                     _ratioFraction --;
-                     _updateFractionPart();
-                 } 
+             }else{ // fraction
+                _ratioFraction --;
+                if(_ratioFraction < 0){
+                    _ratioFraction =99;
+                } 
+                _updateFractionPart();
              }
         }else{
             if(_setIdx <SecondaryIndexBack){
@@ -2549,7 +2554,7 @@ public:
                 _ratio = (float) _ratioInteger  + (float)_ratioFraction/100.0;
                 DBGPrint(F("Ratio:"));
                 DBGPrintln(_ratio);
-                WriteSetting(secondaryDosageRatio,_ratio);
+                WriteSetting(secondaryDosageRatio,_ratio/100.0);
                 _editing=false;
                 _setIdx = SecondaryIndexRatio;
             }
@@ -2605,7 +2610,7 @@ protected:
         }else if(_setIdx == SecondaryIndexRatio){
             lcdPrint_P(1,1,strRatio,true);
             
-            _ratio = ReadSetting(secondaryDosageRatio);
+            _ratio = ReadSetting(secondaryDosageRatio) * 100.0;
             lcdPrintAt(10,1,_ratio,6,2); //100.99
         }else{
             lcdPrint_P(1,1,strBack,true);
