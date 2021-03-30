@@ -75,6 +75,8 @@ typedef enum _SugarAppId{
 #define RevDrosingSymbolChar 2
 #define DosingSymbolNone ' '
 #define DegreeChar 0b11011111
+#define SecondarySymbolChar 3
+
 LiquidCrystal_I2C *lcd;
 
 
@@ -101,6 +103,17 @@ byte EmptyDropBitmap[8] = {
 	0b10001,
 	0b01110,
 	0b00000
+};
+
+byte Rev2ndBitmap[8] = {
+	0b11111, 
+    0b11011, 
+    0b10101, 
+    0b11101, 
+    0b11011, 
+    0b10111, 
+    0b10001, 
+    0b11111
 };
 
 
@@ -134,11 +147,12 @@ void lcdInitialize(){
         lcd->clear();
         lcd->createChar(DrosingSymbolChar,DropBitmap);
         lcd->createChar(RevDrosingSymbolChar,EmptyDropBitmap);
+        lcd->createChar(SecondarySymbolChar,Rev2ndBitmap);
         lcd->noCursor();
 }
-void lcdPrintFixedSpace(byte col, byte row,byte lead,const char* str){
+void lcdPrintFixedSpace(byte col, byte row,byte lead,const char* str,const char leading=' '){
     lcd->setCursor(col,row);
-    for(byte i=0;i<lead;i++) lcd->write(' ');
+    for(byte i=0;i<lead;i++) lcd->write(leading);
     const char* p=str;
     while(*p){
         lcd->write(*p);
@@ -161,6 +175,13 @@ void lcdPrintAt(byte col,byte row, int val, byte space){
     byte len=sprintInt(buff,val);
     buff[len]='\0';
     lcdPrintFixedSpace(col,row,(len > space)? 0:(space - len),buff);
+}
+
+void lcdPrintAtZero(byte col,byte row, int val, byte space){
+    char buff[16];
+    byte len=sprintInt(buff,val);
+    buff[len]='\0';
+    lcdPrintFixedSpace(col,row,(len > space)? 0:(space - len),buff,'0');
 }
 
 byte lcdPrint_P(byte col,byte row,const char* p,bool clear2End=false)
@@ -224,6 +245,7 @@ public:
     }
 
     void setNumber(uint8_t col, uint8_t row,float number,uint8_t space,uint8_t precision){
+        _lead = ' ';
          _col=col; _row = row;
         _len=sprintFloat(_number,number,precision);
         _number[_len]='\0';
@@ -820,7 +842,7 @@ public:
 
 //    virtual void buttonStatus(bool){}
 //    virtual void dropEndded(){}
-    virtual void dosingStateChanged(bool){}
+    virtual void dosingStateChanged(uint8_t,bool){}
 };
 
 /*********************************************************************************/
@@ -829,7 +851,7 @@ const char strAutomatic[] PROGMEM  ="Automatic";
 const char strManual[] PROGMEM ="Manual";
 const char strCalibration[] PROGMEM ="Calibration";
 const char strShotCalibration[] PROGMEM ="Dose calibrate";
-const char strDropSettings[] PROGMEM ="Triger Settings";
+const char strDropSettings[] PROGMEM ="Dosing Control";
 const char strBack[]  PROGMEM ="Back";
 const char strSoundSetting[] PROGMEM="Sound Setting";
 const char strSetting[]  PROGMEM="Setting";
@@ -970,16 +992,10 @@ v2
 # 999    1330mlX 
 A:999.25 99.25g
 
-0123456789012345
-# 999          X 
-A:999.25 99.25g
-
-0123456789012345
-X099/999 1330mlX          
- 23.24   99.25g
 */
 
 const char strTotal[]  PROGMEM="A:";
+const char str2nd[]  PROGMEM="\3";
 
 #define DosageAmountRow 1
 #define DosageAmountCol 9
@@ -990,7 +1006,7 @@ const char strTotal[]  PROGMEM="A:";
 #define BeerVolumeSpace 4
 
 #define DosageCountRow 0
-#define DosageCountCol 2
+#define DosageCountCol 1
 #define DosageCountSymbolCol 0
 #define DosageCountSapce 3
 
@@ -1003,30 +1019,61 @@ const char strTotal[]  PROGMEM="A:";
 #define DefaultBeerVolume  330
 #define MaximumBeerVolume 5000
 
+/*
+0123456789012345
+#999           X 
+A:999.25 99.25g
+
+0123456789012345
+X099/999 1330mlX
+99x99.25 99.25g
+
+*/    
+
+
 class AutoDoser:public SugarBaby{
 public:
     AutoDoser(){
         _totalAmount = 0;
         _count =0;
+        _count2 =0;
     }
 
     ~AutoDoser(){}
 
     void show(){
         _inputBeer = ReadSetting(inputBeer);
+        _useSecondary = ReadSetting(enableSecondaryDoser);
+
         if(_inputBeer){
             if(_beerVolume < MinimumBeerVolume ||_beerVolume > MaximumBeerVolume) _beerVolume = DefaultBeerVolume;
         }else{
             if(_amount < MinimumAmount || _amount > MaximumAmount) _amount = 5;
         }
+        
+        if(_useSecondary){
+            lcdWriteAt(4,0,'/');
+            lcdPrint_P(2,1,str2nd);
+            _doser2Ratio = ReadSetting(secondaryDosageRatio);
+            if(_doser2Ratio ==0){
+                // manual input
+                _dosage2 =0;
+            }else{
+                _dosage2 = _doser2Ratio * (_inputBeer? _beerVolume:_amount);
+            }
+            _updateCount2();
+            _updateDosage2();
+        }else{
+            // "A:"
+            lcdPrint_P(AccumulatedOutputStringCol,AccumulatedOutputRow,strTotal);
+            // "#"
+            lcdWriteAt(DosageCountSymbolCol,DosageCountRow,'#');
+        }
 
-        // "A:"
-        lcdPrint_P(AccumulatedOutputStringCol,AccumulatedOutputRow,strTotal);
         // dosage unit
         if(ReadSetting(useWeight)) lcdWriteAt(DosageAmountCol + DosageAmountSpace,DosageAmountRow,'g');
         else lcdPrint_P(DosageAmountCol + DosageAmountSpace,DosageAmountRow,strMl);
-        // "#"
-        lcdWriteAt(DosageCountSymbolCol,DosageCountRow,'#');
+
 
         if(_inputBeer){
             lcdPrint_P(BeerVolumeCol + BeerVolumeSpace,BeerVolumeRow,strMl);
@@ -1039,6 +1086,7 @@ public:
         _updateTotal();
 
         dosingController.setMode(DosingModeSingleShot);
+        if(_useSecondary) dosingController2.setMode(DosingModeSingleShot);
     }
 
     void rotateForward(){
@@ -1049,11 +1097,25 @@ public:
                 _updateBeerVolume();
                 _calPrimingSugar();
                 _updateDosage();
+
+                if(_useSecondary){
+                    if(_doser2Ratio > 0){
+                        _dosage2 = _doser2Ratio * _beerVolume;
+                        _updateDosage2();
+                    }
+                }
             }
         }else{
            _amount += DoseAdjustUnit;
             if(_amount > MaximumAmount) _amount = MaximumAmount;
             _updateDosage();
+            if(_useSecondary){
+                if(_doser2Ratio > 0){
+                    _dosage2 = _doser2Ratio * _beerVolume;
+                    _updateDosage2();
+                }
+            }
+
         }
     }
     
@@ -1065,22 +1127,45 @@ public:
                 _updateBeerVolume();
                 _calPrimingSugar();
                 _updateDosage();
+
+                if(_useSecondary){
+                    if(_doser2Ratio > 0){
+                        _dosage2 = _doser2Ratio * _beerVolume;
+                        _updateDosage2();
+                    }
+                }
+
             }
         }else{
             _amount -= DoseAdjustUnit;
             if(_amount <MinimumAmount) _amount = MinimumAmount;
             _updateDosage();
+
+            if(_useSecondary){
+                if(_doser2Ratio > 0){
+                    _dosage2 = _doser2Ratio * _beerVolume;
+                    _updateDosage2();
+                }
+            }
+
         }
     }
 
-    void dosingStateChanged(bool dosing){
+    void dosingStateChanged(uint8_t doserId,bool dosing){
         if(dosing){
-            _count ++;
-            _updateCount();
+            if(doserId==0){
+                _count ++;
+                _updateCount();
+            }else{
+                _count2 ++;
+                _updateCount2();
+            }
         }else{
             // udpateTotal, suppose it _amount ++, but the amount might changed. so...
-            _totalAmount += dosingController.getDosingVolume();
-            _updateTotal();
+             if(doserId==0){
+                _totalAmount += dosingController.getDosingVolume();
+                _updateTotal();
+             }
         }
     }
 
@@ -1088,8 +1173,12 @@ protected:
     float _amount;
     float _totalAmount;
     uint16_t _count;
+    uint16_t _count2;
     uint16_t _beerVolume;
     bool _inputBeer;
+    bool _useSecondary;
+    float _dosage2;
+    float _doser2Ratio;
 
     void _calPrimingSugar(){
         //
@@ -1118,11 +1207,31 @@ protected:
     }
 
     // LCD display
+/*
+0123456789012345
+#999           X 
+A:999.25 99.25g
+
+0123456789012345
+X099/999 1330mlX
+99x99.25 99.25g
+
+*/    
     void _updateCount(){
-        lcdPrintAt(DosageCountCol,DosageCountRow,_count,DosageCountSapce);
+        lcdPrintAtZero(DosageCountCol,DosageCountRow,_count,DosageCountSapce);
     }
+    
+    void _updateCount2(){
+        lcdPrintAtZero(0,1,_count2,2);
+    }
+
     void _updateTotal(){
-        lcdPrintAt(AccumulatedOutputCol,AccumulatedOutputRow,_totalAmount,AccumulatedOutputSpace,2);
+        if(_useSecondary){
+            int rounded =(int) round(_totalAmount);
+            lcdPrintAtZero(5,0,rounded,3);
+        }else{
+            lcdPrintAt(AccumulatedOutputCol,AccumulatedOutputRow,_totalAmount,AccumulatedOutputSpace,2);
+        }
     }
     void _updateDosage(){
         DBGPrint(F("Sugar amount:"));
@@ -1130,6 +1239,12 @@ protected:
         lcdPrintAt(DosageAmountCol,DosageAmountRow,_amount,DosageAmountSpace,2);
         dosingController.setDosage(_amount);
     }
+    
+    void _updateDosage2(){
+        lcdPrintAt(3,1,_dosage2,5,2);
+        dosingController2.setDosage(_dosage2);
+    }    
+    
     void _updateBeerVolume(){
         DBGPrint(F("Beer Vol:"));
         DBGPrintln(_beerVolume);
@@ -1155,53 +1270,83 @@ public:
     ~ManualDoser(){}
 
     void show(){
-        lcdPrint_P(1,0,strManual,true);
-        if(ReadSetting(useWeight)) lcdWriteAt(14,1,'g');
-        else lcdPrint_P(14,1,strMl);
-        lcd->setCursor(5,1);
-        lcd->write('s');
-        _accumulatedTime=0;
-        _updateInfo(0,0);
+        if(ReadSetting(enableSecondaryDoser)){
+            _primaryRow =0;
+
+            dosingController2.setMode(DosingModeManual);
+            _doserRunning[1] = false;
+            _accumulatedVolume[1] = 0;
+            _accumulatedTime[1]=0;
+        
+            _printUnit(1);
+            _updateInfo(1,0,0);
+
+        }else{
+            lcdPrint_P(1,0,strManual,true);
+
+            _primaryRow = 1;
+        }
+        
+        _printUnit(_primaryRow);
+        _updateInfo(_primaryRow,0,0);
 
         dosingController.setMode(DosingModeManual);
-        _doserRunning = false;
-        _accumulatedVolume = 0;
+        _doserRunning[0] = false;
+        _accumulatedVolume[0] = 0;
+        _accumulatedTime[0]=0;
     }
 
     void loop(){
-        if(_doserRunning){
-            if( millis() - _lastUpdate > MinimumUpdateTime){
-                _lastUpdate = millis();
-                _updateInfo(_accumulatedTime +  millis() - _startedTime,
-                    _accumulatedVolume + dosingController.getDosingVolume());
-            }
+        _updateRunningInfo(0);
+        if(ReadSetting(enableSecondaryDoser)){
+            _updateRunningInfo(1);
         }
     }
 
-    void dosingStateChanged(bool dosing){
+    void dosingStateChanged(uint8_t doserId,bool dosing){
         if(dosing){
-            _startedTime = millis();
-            _doserRunning =true;
+            _startedTime[doserId] = millis();
+            _doserRunning[doserId] =true;
         }else{
-            _accumulatedVolume += dosingController.getDosingVolume();
-            _doserRunning = false;
-            _accumulatedTime += millis() - _startedTime;
-            _updateInfo(_accumulatedTime,_accumulatedVolume);
+            _accumulatedVolume[doserId] += doserId==0? dosingController.getDosingVolume():dosingController2.getDosingVolume();
+            _doserRunning[doserId] = false;
+            _accumulatedTime[doserId] += millis() - _startedTime[doserId];
+            _updateInfo(doserId==0? _primaryRow:1,_accumulatedTime[doserId],_accumulatedVolume[doserId]);
         }
      }
 
 protected:
-    uint32_t _lastUpdate;
-    uint32_t _accumulatedTime;
-    uint32_t _startedTime;
-    float    _accumulatedVolume;
-    bool     _doserRunning;
+    uint32_t _lastUpdate[2];
+    uint32_t _accumulatedTime[2];
+    uint32_t _startedTime[2];
+    float    _accumulatedVolume[2];
+    bool     _doserRunning[2];
 
-    void _updateInfo(uint32_t duration,float volume){
-        lcdPrintAt(0,1,(float) duration/1000.0,5,1);        
-//        DBGPrint("accvol:");
-//        DBGPrintln(volume);
-        lcdPrintAt(7,1,volume ,7,2);
+    uint8_t  _primaryRow;
+
+    void _updateInfo(uint8_t row,uint32_t duration,float volume){
+        lcdPrintAt(1,row,(float) duration/1000.0,5,1);        
+        DBGPrint("accvol:");
+        DBGPrintln(volume);
+        lcdPrintAt(7,row,volume ,7,2);
+    }
+    void _printUnit(uint8_t row){
+        if(ReadSetting(useWeight)) lcdWriteAt(14,row,'g');
+        else lcdPrint_P(14,row,strMl);
+        lcd->setCursor(6,row);
+        lcd->write('s');        
+    }
+    void _updateRunningInfo(uint8_t idx){
+        if(_doserRunning[idx]){
+            if( millis() - _lastUpdate[idx] > MinimumUpdateTime){
+                _lastUpdate[idx] = millis();
+                _updateInfo(idx==0? _primaryRow:1,
+                    _accumulatedTime[idx] +  millis() - _startedTime[idx],
+                    _accumulatedVolume[idx] + 
+                    idx==0? dosingController.getDosingVolume():dosingController2.getDosingVolume());
+            }
+        }
+
     }
 };
 
@@ -1223,7 +1368,7 @@ Setup
 cal by 100.24 ml
 */
 
-const char strCalBy[] PROGMEM="cal by";
+const char strCalBy[] PROGMEM="Vol";
 const char strAdjust[] PROGMEM="adjust";
 const char strRunDoser[] PROGMEM="Run Doser";
 const char strEnter[] PROGMEM="Continue";
@@ -1314,7 +1459,7 @@ public:
         return false;
     }
 
-    void dosingStateChanged(bool dosing){
+    void dosingStateChanged(uint8_t doserId,bool dosing){
         if(_mode != Cal_RunDoser) return;
 
         if(dosing){
@@ -1552,7 +1697,7 @@ public:
         return false;
     }
 
-    void dosingStateChanged(bool dosing){
+    void dosingStateChanged(uint8_t doserId,bool dosing){
         if(_state != CS_Running) return;
         if(dosing) return;
 
@@ -2269,7 +2414,7 @@ const char strSecondaryDoser[] PROGMEM="SecondaryDoser";
 const char strEnable[] PROGMEM =  "Enable";
 const char strYes[] PROGMEM = "Yes";
 const char strNo[] PROGMEM =  "No ";
-const char strRatio[] PROGMEM = "Ratio";
+const char strRatio[] PROGMEM = "AutoRatio";
 
 
 #define SecondaryIndexEnable 0
@@ -2492,11 +2637,11 @@ public:
         // drawing symobol
         // isDosingStateChanged() must be called in the loop
         if(dosingController.isDosingStateChanged()){
-            _running->dosingStateChanged(dosingController.isDosing());
+            _running->dosingStateChanged(0,dosingController.isDosing());
         }
 
         if(dosingController2.isDosingStateChanged()){
-            _running->dosingStateChanged(dosingController2.isDosing());
+            _running->dosingStateChanged(1,dosingController2.isDosing());
         }
 
         Buzzer.loop();

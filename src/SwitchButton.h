@@ -58,12 +58,14 @@ public:
             _logicalPressed = _pressed;
             return true;
         }
+        #if 0
         DBGPrint("logical:");
         DBGPrint(_logicalPressed);
         DBGPrint("physical:");
         DBGPrint(_pressed);
         DBGPrint("time:");
         DBGPrintln(_changedTime);
+        #endif
         // not long enough. wait..
         return false;
     }
