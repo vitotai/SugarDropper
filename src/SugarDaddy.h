@@ -26,6 +26,8 @@
 #define DoseAdjustUnit 0.05
 #define MaximumAmount 99.0
 #define MinimumAmount 0.5
+#define MinimumDoseAmount 0.1
+
 #define MaximumCalibrationCount 100
 
 #define RA_CLK_PIN 9
@@ -837,11 +839,10 @@ public:
     virtual void rotateForward(){}
     virtual void rotateBackward(){}
     virtual bool switchPushed(){return true;}
+    virtual bool switchLongPressed(){return true;}
     // on exit
     virtual SugarAppId nextApp(){return SugarAppMenu;}
 
-//    virtual void buttonStatus(bool){}
-//    virtual void dropEndded(){}
     virtual void dosingStateChanged(uint8_t,bool){}
 };
 
@@ -1037,23 +1038,26 @@ public:
         _totalAmount = 0;
         _count =0;
         _count2 =0;
+       
     }
 
     ~AutoDoser(){}
 
     void show(){
+         _changeSecondary=false;
         _inputBeer = ReadSetting(inputBeer);
         _useSecondary = ReadSetting(enableSecondaryDoser);
 
         if(_inputBeer){
             if(_beerVolume < MinimumBeerVolume ||_beerVolume > MaximumBeerVolume) _beerVolume = DefaultBeerVolume;
         }else{
-            if(_amount < MinimumAmount || _amount > MaximumAmount) _amount = 5;
+            if(_amount < MinimumDoseAmount || _amount > MinimumDoseAmount) _amount = 5;
         }
         
         if(_useSecondary){
             lcdWriteAt(4,0,'/');
-            lcdPrint_P(2,1,str2nd);
+            EditingText.setText_P(2,1,str2nd);
+            EditingText.show();
             _doser2Ratio = ReadSetting(secondaryDosageRatio);
             if(_doser2Ratio ==0){
                 // manual input
@@ -1090,7 +1094,12 @@ public:
     }
 
     void rotateForward(){
-        if(_inputBeer){
+        if(_changeSecondary){
+            _dosage2 += DoseAdjustUnit;
+            if(_dosage2 > MaximumAmount) _dosage2 = MaximumAmount;
+            _updateDosage2();
+
+        }else if(_inputBeer){
             if( (_beerVolume +10) < MaximumBeerVolume){
                 _beerVolume +=10;
 
@@ -1120,7 +1129,12 @@ public:
     }
     
     void rotateBackward(){
-        if(_inputBeer){
+        if(_changeSecondary){
+            _dosage2 -= DoseAdjustUnit;
+            if(_dosage2 <MinimumDoseAmount) _dosage2 = MinimumDoseAmount;
+            _updateDosage2();
+
+        }else if(_inputBeer){
             if( (_beerVolume -10) > MinimumBeerVolume){
                 _beerVolume -=10;
 
@@ -1138,7 +1152,7 @@ public:
             }
         }else{
             _amount -= DoseAdjustUnit;
-            if(_amount <MinimumAmount) _amount = MinimumAmount;
+            if(_amount <MinimumDoseAmount) _amount = MinimumDoseAmount;
             _updateDosage();
 
             if(_useSecondary){
@@ -1168,6 +1182,28 @@ public:
              }
         }
     }
+    
+    bool switchPushed(){
+        if(_changeSecondary){
+            _changeSecondary=false;
+            EditingText.noblink();
+            return false;
+         }
+        return true;
+    }
+
+    bool switchLongPressed(){
+        if(_useSecondary && _doser2Ratio==0){
+            if(_changeSecondary){
+                _changeSecondary=false;
+                EditingText.noblink();
+            }else{
+                _changeSecondary=true;
+                EditingText.blink();
+            }
+        }
+        return true;
+    }
 
 protected:
     float _amount;
@@ -1179,6 +1215,7 @@ protected:
     bool _useSecondary;
     float _dosage2;
     float _doser2Ratio;
+    bool  _changeSecondary;
 
     void _calPrimingSugar(){
         //
@@ -2614,13 +2651,17 @@ public:
 		RotaryEncoderStatus status=encoder.read();
   		switch(status)
   		{
-    		case RotaryEncoderStatusPushed:
+    		case RotaryEncoderStatusDepushed: //RotaryEncoderStatusPushed:
     			changed = _running->switchPushed();                
                 if(changed){
                     switchTo(_running->nextApp());
                 }
     			break;
-    
+
+            case RotaryEncoderStatusLongPressed:
+                _running->switchLongPressed();
+            break;
+
     		case RotaryEncoderStatusFordward:
     			_running->rotateForward();
     			break;

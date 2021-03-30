@@ -123,33 +123,27 @@ class RotaryEncoder
 	    }
 
         bool pushed=!digitalRead(_encoderPinP);
-		if (_pushed !=  pushed)
-                {
+		if (_pushed !=  pushed){
                    //DBG_println("sw");
-                    _pushed= pushed;
-                    if(pushed)
-                    {
-                        if((millis() - _pressedTime) <  200)  return RotaryEncoderStatusNone; // debounce
-                       _pressedTime = millis();
-                    }
-                    if(_skipUp && !_pushed)
-                    {
-                        _skipUp = false;
-                    }
-                    else
-                    return pushed?  RotaryEncoderStatusPushed:RotaryEncoderStatusDepushed;
-                }else
-                {
-                    if(_pushed && !_skipUp)
-                    {
-                        if((millis() - _pressedTime) >= LongPressedTime)
-                        {
-                           _skipUp = true;
-                           return RotaryEncoderStatusLongPressed;
-                        }
-                    }
+            _pushed= pushed;
+            if(pushed){
+                if((millis() - _pressedTime) <  200)  return RotaryEncoderStatusNone; // debounce
+                _pressedTime = millis();
+            }
+            if(_skipUp && !_pushed){
+                    _skipUp = false;
+            }else{
+                return pushed?  RotaryEncoderStatusPushed:RotaryEncoderStatusDepushed;
+            }
+        }else{
+            if(_pushed && !_skipUp){
+                if((millis() - _pressedTime) >= LongPressedTime){
+                    _skipUp = true;
+                    return RotaryEncoderStatusLongPressed;
                 }
-                return RotaryEncoderStatusNone;
+            }
+        }
+        return RotaryEncoderStatusNone;
 	}
 
 };
