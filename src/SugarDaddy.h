@@ -32,10 +32,11 @@
 #define RB_DT_PIN 10
 #define SW_PIN 11
 
-#define BUTTON_PIN 2
+#define BUTTON_PIN 3
+#define BUTTON2_PIN 2
 
-#define STEP_PIN 5
-#define DIR_PIN 6
+#define PUMP_PIN 5
+#define PUMP2_PIN 6
 
 #define SCL_PIN A5
 #define SDA_PIN A4
@@ -49,8 +50,9 @@
 #define BeepDoseStart 300
 #define BeepDoseEnd 550
 
-#define BlinkingShowTime 600
-#define BlinkingHideTime 400
+#define BlinkingShowTime 500
+#define BlinkingHideTime 250
+#define MaximumDoserRatio 99
 
 typedef enum _SugarAppId{
     SugarAppMenu,
@@ -61,7 +63,8 @@ typedef enum _SugarAppId{
     SugarAppDosingSettingMode,
     SugarAppSoundSetting,
     SugarAppUnitSetting,
-    SugarAppPriming
+    SugarAppPriming,
+    SugarAppSecondarySetting
 } SugarAppId;
 
 
@@ -150,14 +153,14 @@ void lcdPrintAt(byte col, byte row,float value,byte space, byte precision){
     char buff[16];
     byte len=sprintFloat(buff,value,precision);
     buff[len]='\0';
-    lcdPrintFixedSpace(col,row,space - len,buff);
+    lcdPrintFixedSpace(col,row,(len > space)? 0:(space - len),buff);
 }
 
 void lcdPrintAt(byte col,byte row, int val, byte space){
     char buff[16];
     byte len=sprintInt(buff,val);
     buff[len]='\0';
-    lcdPrintFixedSpace(col,row,space - len,buff);
+    lcdPrintFixedSpace(col,row,(len > space)? 0:(space - len),buff);
 }
 
 byte lcdPrint_P(byte col,byte row,const char* p,bool clear2End=false)
@@ -189,8 +192,10 @@ void  lcdClearLine(byte row){
     lcdClear(0,row,LcdColNumber);
 }
 
-void lcdDosingSymbol(char sym){
-    lcd->setCursor(15,0);
+void lcdDosingSymbol(char sym,uint8_t id){
+    if(id ==0) lcd->setCursor(15,0);
+    else lcd->setCursor(0,0);
+
     lcd->write(sym);
 }
 inline void lcdSetCursor(byte col, byte row){
@@ -207,11 +212,15 @@ public:
     ~EditingTextClass(){}
 
     void setNumber(uint8_t col, uint8_t row,int number,uint8_t space){
+        setNumberLeading(col,row,number,space,' ');
+    }
+    void setNumberLeading(uint8_t col, uint8_t row,int number,uint8_t space,const char lead){
          _col=col; _row = row;
         _len=sprintInt(_number,number);
         _number[_len]='\0';
         _space = space;
         _isText=false;
+        _lead = lead;
     }
 
     void setNumber(uint8_t col, uint8_t row,float number,uint8_t space,uint8_t precision){
@@ -248,7 +257,7 @@ public:
 
             lcdSetCursor(_col,_row);
             uint8_t lead = _space - _len;
-            for(int i=0;i<lead;i++) lcdWrite(' ');
+            for(int i=0;i<lead;i++) lcdWrite(_lead);
             const char* p=_number;
             while(*p){
                 lcd->write(*p);
@@ -285,6 +294,7 @@ protected:
     bool _hiding;
     uint8_t _col;
     uint8_t _row;
+    uint8_t _lead;
 
     bool _isText;
     const char *_text;
@@ -322,9 +332,7 @@ float brix2SG(float Brix){
 
 #define FootprintPattern 0x5B5B5B5B
 
-
-struct _Settings{
-    uint32_t footPrint;
+typedef struct _DosingControlleretting{
     float stepPerMl;
     float shotAdjustment;
     uint8_t triggerType;
@@ -334,12 +342,21 @@ struct _Settings{
     uint8_t beepButton;
     uint8_t beepDoseStart;
     uint8_t beepDoseEnd;
+}DosingControllerSetting;
+
+struct _Settings{
+    uint32_t footPrint;
+
     uint8_t useWeight;
     // for priming sugar calculation
     uint8_t inputBeer;
     uint8_t sugarRatio; // in brix
     int8_t   beerTemperature;
     uint8_t  carbonation; // in volume * 10
+    // Dosing machine
+    uint8_t  enableSecondaryDoser;
+    float    secondaryDosageRatio;
+    DosingControllerSetting doser[2];
 } Settings;
 
 #define Set2CV(v) (float)(v)/10.0
@@ -358,10 +375,15 @@ public:
         EEPROM.get(0,Settings);
         if(Settings.footPrint != FootprintPattern){
             Settings.footPrint = FootprintPattern;
-            Settings.shotAdjustment =0;
-            Settings.triggerType =0;
-            Settings.delayTime =1;
-            Settings.coolTime = 2;
+            Settings.doser[0].shotAdjustment =0;
+            Settings.doser[0].triggerType =0;
+            Settings.doser[0].delayTime =0;
+            Settings.doser[0].coolTime = 2;
+            Settings.doser[1].shotAdjustment =0;
+            Settings.doser[1].triggerType =0;
+            Settings.doser[1].delayTime =0;
+            Settings.doser[1].coolTime = 2;
+            Settings.enableSecondaryDoser =0;
             EEPROM.put(0,Settings);
             DBGPrintln("uninitialized data.");
             return false;
@@ -387,12 +409,27 @@ public:
         *(((uint8_t*)&Settings) + offset)=val;
         EEPROM.update(offset,val);
     }
+
+    template <class T>  void writeDoserSetting(uint8_t id,int subaddr, const T& value){
+        int addr = offsetof(_Settings,doser[0]) +  sizeof(DosingControllerSetting) * id + subaddr;
+        const byte* p = (const byte*)(const void*)&value;
+        unsigned int i;
+        for (i = 0; i < sizeof(value); i++)
+            EEPROM.write(addr++, *p++);
+
+    }
 };
 SettingManagerClass SettingManager;
 
 
 #define ReadSetting(a) Settings.a
 #define WriteSetting(a,v) { Settings.a=v; SettingManager.EEPROM_writeAnything(offsetof(_Settings,a) ,v);}
+
+#define DoserSetting(i,a) Settings.doser[i].a
+#define WriteDoserSetting(i,a,v) SettingManager.writeDoserSetting(i,offsetof(DosingControllerSetting,a) ,v)
+
+#define UpdateDoserSetting(i,a,v) Settings.doser[i].a=v,SettingManager.writeDoserSetting(i,offsetof(DosingControllerSetting,a) ,v)
+
 
 #define ReadSettingAddress(a) *(((uint8_t*)&Settings) + (a))
 //#define WriteSettingAddress(a,v) *(((uint8_t*)&Settings) + (a))=v
@@ -438,19 +475,47 @@ protected:
 }Buzzer(BUZZ_PIN);
 
 /*********************************************************************************/
-//  Doser control
+//  SugarDoser converts volume or gram to "steps"
+/* 
+
+  R: real Flow Rate
+  L: Latency or Error cuased by start and stop of pump
+  T: Dosing time. 
+  S: total ouput
+  
+  R * T + L  = S, assuming L is relative small, when R*T is way larger than L, ignore L
+  R*T = S,   R= T/S. 
+  Then, in Dose calibration
+
+  N: number of dosages.
+
+  N * ( R * T + L ) = S
+  L = (S -  R*T*N )/N
+
+  Alternative way, run Twice calibration with different time
+
+ R * T1 + L  = S1
+ R * T2 + L  = S2
+R *(T1 - T2) = S1 - S2, R = (S1 - S2)/(T1 - T2)
+L = S1 - R * T1
+
+*/
+//******************************************************************
+
 class SugarDoser{
 public:
     SugarDoser(){}
     ~SugarDoser(){}
 
-    void begin(byte pin){
+    void begin(byte pin,float stepPerMl, float shotAdjustment){
         _stepper.begin(pin);
+        _stepPerMl = stepPerMl;
+        _shotAdjustment = shotAdjustment;
 
         DBGPrint(F("step per ml:"));
-        DBGPrint(ReadSetting(stepPerMl));
+        DBGPrint(_stepPerMl);
         DBGPrint(F(" shotAdjustment:"));
-        DBGPrintln(ReadSetting(shotAdjustment));
+        DBGPrintln(_shotAdjustment);
     }
     
     bool running(){
@@ -458,10 +523,10 @@ public:
     }
 
     void dose(float amount){
-        if(_stepper.running()) return;
+         if(_stepper.running()) return;
 
-        float adjustedValue =amount + ReadSetting(shotAdjustment);
-        uint32_t steps =(uint32_t)(adjustedValue * ReadSetting(stepPerMl));
+        float adjustedValue =amount + _shotAdjustment;
+        uint32_t steps =(uint32_t)(adjustedValue * _stepPerMl);
 
         _startDosingPos=_stepper.runSteps( steps );
 
@@ -482,32 +547,17 @@ public:
         _stepper.stop();
         DBGPrintln(F("\t flow stop"));
     }
-    void startCalibrate(){
-        _startCalPos = _stepper.steps();
-        DBGPrint(F("*start steps: "));
-        DBGPrintln(_startCalPos);
 
+    uint32_t steps(){
+        return _stepper.steps();
     }
 
-    void calibrate(float amount){
-        uint32_t steps = _stepper.steps();
-        WriteSetting(stepPerMl, (float)(steps - _startCalPos) / amount);
-        SettingManager.save();
-
-        DBGPrint(F("*stop steps: "));
-        DBGPrintln(steps);
-
-        DBGPrint(F("*Calibrate to "));
-        DBGPrint(amount,2);
-        DBGPrint(F("ml steps/ml:"));
-        DBGPrintln(ReadSetting(stepPerMl) ,2);
+    void setStepPerMl(float amount){
+        _stepPerMl = amount;
     }
-    void resetDoseAdjustment(){
-        WriteSetting(shotAdjustment,0);
-    }
+
     void setDoseAdjustment(float value){
-        WriteSetting(shotAdjustment, value);
-        SettingManager.save();
+        _shotAdjustment =value;
         DBGPrint(F("update shot adjustment:"));
         DBGPrintln(value);
     }
@@ -517,12 +567,13 @@ public:
         uint32_t steps = _stepper.steps();
 //        DBGPrint(F("run steps:"));
 //        DBGPrintln(steps - _startDosingPos);
-        return (float)(steps - _startDosingPos) / ReadSetting(stepPerMl);
+        return (float)(steps - _startDosingPos) / _stepPerMl;
     }
 
 protected:
     Stepper _stepper;
-    uint32_t _startCalPos;
+    float _stepPerMl;
+    float _shotAdjustment;
 
     uint32_t _startDosingPos;
 };
@@ -539,10 +590,12 @@ DSPrepareToDose,
 DSDosing,
 DSCoolTime
 };
+//******************************************************************
+// controls Dosing operation.
 
 class DosingController{
 public:
-    DosingController():_dosing(false){}
+    DosingController(uint8_t id):_id(id),_dosing(false){}
     ~DosingController(){}
 
     void setDosage(float dosage){
@@ -561,16 +614,18 @@ public:
     }
     
     void begin(SwitchButton& switchButton,byte pin){
+        loadSetting();
         _mode = DosingModeDisabled;
         _switchButton = & switchButton;
-        loadSetting();
-        _doser.begin(pin);
+        _doser.begin(pin, _setting->stepPerMl,_setting->shotAdjustment);
     }
     
     void loadSetting(){
-        _dosingDelay = ReadSetting(delayTime) * 500;
-        _coolTime = ReadSetting(coolTime) * 500;
-        _isPositionSensor = ReadSetting(triggerType) !=0;
+        _setting = & Settings.doser[_id];
+
+        _dosingDelay = _setting->delayTime * 500;
+        _coolTime = _setting->coolTime * 500;
+        _isPositionSensor = _setting->triggerType !=0;
     }
 
     // most be call every loop
@@ -592,9 +647,9 @@ public:
             _dosing = _doser.running();
             _processStateForDropingStateChange(_dosing);
             if(_dosing){
-                if(ReadSetting(beepDoseStart)) Buzzer.buzz(BeepDoseStart);
+                if(_setting->beepDoseStart) Buzzer.buzz(BeepDoseStart);
             }else{
-                if(ReadSetting(beepDoseEnd))  Buzzer.buzz(BeepDoseEnd);
+                if(_setting->beepDoseEnd)  Buzzer.buzz(BeepDoseEnd);
             }
             ret =true;
         }
@@ -607,25 +662,36 @@ public:
     }
     // for calibration/programming purpose
     void dose(){
-        lcdDosingSymbol(DrosingSymbolChar);
-        _doser.dose(_dosage);
-        _state = DSDosing;
+        if(! _doser.running()){
+            lcdDosingSymbol(DrosingSymbolChar,_id);
+            _doser.dose(_dosage);
+            _state = DSDosing;
+        }
     }
 
-    inline void resetDoseAdjustment(){
-        _doser.resetDoseAdjustment();
+    void resetDoseAdjustment(){
+        setDoseAdjustment(0);
     }
     
-    inline void setDoseAdjustment(float val){
+    void setDoseAdjustment(float val){
         _doser.setDoseAdjustment(val);
+        _setting->shotAdjustment = val;
+        // save to EEPROM
+        WriteDoserSetting(_id,shotAdjustment,val);
     }
 
-    inline void startCalibrate(){
-        _doser.startCalibrate();
+    void startCalibrate(){
+       _calStarSteps= _doser.steps();
     }
 
-    inline void calibrate(float vol){
-        _doser.calibrate(vol);
+    void calibrate(float vol){
+        uint32_t currentSteps = _doser.steps();
+        float spm = (float)(currentSteps - _calStarSteps) / vol;
+        _doser.setStepPerMl(spm);
+        // save
+        _setting->stepPerMl = spm;
+        // update to EEPROM
+        WriteDoserSetting(_id,stepPerMl,spm);
     }
 
     inline float getDosingVolume(){
@@ -633,6 +699,8 @@ public:
     }
 protected:
     SugarDoser _doser;
+    uint8_t    _id;
+    DosingControllerSetting *_setting;
     SwitchButton* _switchButton;
     
     bool _dosing;
@@ -644,13 +712,14 @@ protected:
     uint32_t   _coolTime;
 
     uint32_t   _timeToAction;
+    uint32_t   _calStarSteps;
 
     void _handleSensorState(bool inPosition){
         if(inPosition){
             if(_mode == DosingModeSingleShot || _mode == DosingModeManual){
                 if(_state==DSIdle){
-                   if(ReadSetting(beepButton)) Buzzer.buzz(BeepButton);
-                    lcdDosingSymbol(RevDrosingSymbolChar);
+                   if(_setting->beepButton) Buzzer.buzz(BeepButton);
+                    lcdDosingSymbol(RevDrosingSymbolChar,_id);
                     _timeToAction = millis() + _dosingDelay;
                     _state = DSPrepareToDose;
                 }
@@ -663,7 +732,7 @@ protected:
                 DBGPrintln(F("Forced Stop"));
             }else if (_state==DSPrepareToDose){
                 _state=DSIdle;
-                lcdDosingSymbol(DosingSymbolNone);
+                lcdDosingSymbol(DosingSymbolNone,_id);
                 DBGPrintln(F("Forced Stop"));
             }
         }
@@ -675,15 +744,15 @@ protected:
 
         if(_state==DSIdle){
             if(_mode == DosingModeSingleShot || _mode == DosingModeManual){
-                if(ReadSetting(beepButton)) Buzzer.buzz(BeepButton);
-                lcdDosingSymbol(RevDrosingSymbolChar);
+                if(_setting->beepButton) Buzzer.buzz(BeepButton);
+                lcdDosingSymbol(RevDrosingSymbolChar,_id);
 
                 _timeToAction = millis() + _dosingDelay;
                 _state = DSPrepareToDose;
             }
         }else if(_state==DSDosing){
             if(_mode == DosingModeManual){
-               if(ReadSetting(beepButton)) Buzzer.buzz(BeepButton);
+               if(_setting->beepButton) Buzzer.buzz(BeepButton);
                 // stop
                 _doser.stop();
                 // state change will be process when
@@ -696,10 +765,10 @@ protected:
         if(! dosing){ // dosing end
             _timeToAction = millis() + _coolTime;
             if(_mode == DosingModeDisabled){
-                lcdDosingSymbol(DosingSymbolNone);
+                lcdDosingSymbol(DosingSymbolNone,_id);
                 _state = DSIdle;
             }else{
-                lcdDosingSymbol(RevDrosingSymbolChar);
+                lcdDosingSymbol(RevDrosingSymbolChar,_id);
                 _state = DSCoolTime;
             }
             
@@ -711,10 +780,10 @@ protected:
         if(_state == DSPrepareToDose){
             if(present >= _timeToAction){
                 if(_mode == DosingModeSingleShot){
-                    lcdDosingSymbol(DrosingSymbolChar);
+                    lcdDosingSymbol(DrosingSymbolChar,_id);
                     _doser.dose(_dosage);
                 }else{
-                    lcdDosingSymbol(DrosingSymbolChar);
+                    lcdDosingSymbol(DrosingSymbolChar,_id);
                     _doser.run();
                 }
                 _state = DSDosing;
@@ -722,12 +791,12 @@ protected:
         }else if(_state == DSCoolTime){
             if(present >= _timeToAction){
                 _state = DSIdle;
-                lcdDosingSymbol(DosingSymbolNone);
+                lcdDosingSymbol(DosingSymbolNone,_id);
             }
         }
     }
 
-} dosingController;
+} dosingController(0), dosingController2(1);
 
 
 
@@ -768,6 +837,8 @@ const char strMl[] PROGMEM = "ml";
 const char strUnitSetting[] PROGMEM ="Unit";
 const char strFunction[] PROGMEM ="Function";
 const char strAutoDoseSettings[] PROGMEM="Priming";
+const char str2ndDoser[] PROGMEM="2nd Doser";
+
 struct MenuList;
 
 struct MenuItem{
@@ -788,12 +859,13 @@ struct MenuList{
 extern const MenuList MainMenu;
 
 const MenuItem SettingMenuItems[]={
+    {str2ndDoser, false, {.mode = SugarAppSecondarySetting}},
+    {strUnitSetting, false, {.mode=SugarAppUnitSetting}},
+    {strAutoDoseSettings, false, { .mode=SugarAppPriming }},
+    {strDropSettings, false, { .mode=SugarAppDosingSettingMode }},
+    {strSoundSetting, false, {.mode=SugarAppSoundSetting}},
     {strCalibration, false,{ .mode=SugarAppCalibration }},
     {strShotCalibration,false,{ .mode=SugarAppDoseCalibration}},
-    {strDropSettings, false, { .mode=SugarAppDosingSettingMode }},
-    {strAutoDoseSettings, false, { .mode=SugarAppPriming }},
-    {strSoundSetting, false, {.mode=SugarAppSoundSetting}},
-    {strUnitSetting, false, {.mode=SugarAppUnitSetting}},
     {strBack, true, { .subMenu= &MainMenu }}
 };
 
@@ -836,7 +908,7 @@ public:
 
     void show(){
         // print display
-        lcdPrint_P(0,0,_menu->title,true);
+        lcdPrint_P(1,0,_menu->title,true);
         _printItem();
     }
 
@@ -903,8 +975,8 @@ A:999.25 99.25g
 A:999.25 99.25g
 
 0123456789012345
-XQ99.99  1330mlX          
-099/999  99.25g
+X099/999 1330mlX          
+ 23.24   99.25g
 */
 
 const char strTotal[]  PROGMEM="A:";
@@ -1083,7 +1155,7 @@ public:
     ~ManualDoser(){}
 
     void show(){
-        lcdPrint_P(0,0,strManual,true);
+        lcdPrint_P(1,0,strManual,true);
         if(ReadSetting(useWeight)) lcdWriteAt(14,1,'g');
         else lcdPrint_P(14,1,strMl);
         lcd->setCursor(5,1);
@@ -1138,6 +1210,7 @@ protected:
 // initial calibration/setup
 //  to derive steps/ml
 typedef enum _CalibrationMode{
+Cal_SelectDoser,
 Cal_SelectVolume,
 Cal_RunDoser,
 Cal_InputVolume,
@@ -1158,36 +1231,52 @@ const char strRate[] PROGMEM="Rate";
 const char strMlPerSec[] PROGMEM="ml/s";
 const char strGramPerSec[] PROGMEM="g/s";
 
+const char strPrimary[] PROGMEM =   "Primary";
+const char strSecondary[] PROGMEM = "Secondary";
+const char strDoser[] PROGMEM = "Doser";
+
+#define TitleRow 0
+#define TitleCol 1
+
 class SugarCalibrator:public SugarBaby{
 public:
     SugarCalibrator(){}
     ~SugarCalibrator(){}
 
     void show(){
-        _mode =Cal_SelectVolume;
+        _mode =Cal_SelectDoser;
         _calVolume = 10;
-        lcdPrint_P(0,0,strCalibration,true);
-        lcdPrint_P(0,1,strCalBy);
-        if(ReadSetting(useWeight)) lcdWriteAt(14,1,'g');
-        else lcdPrint_P(14,1,strMl);
-
-        _updateVolumeDisplay(_calVolume);
+        lcdPrint_P(TitleCol,TitleRow,strCalibration,true);
+        lcdPrint_P(1,1,strDoser);
+        _doserId = 0;
+        _displayDoserSelection();
     }
     
 
     void rotateForward(){
-        if(_mode == Cal_SelectVolume){
+        if(_mode == Cal_SelectDoser){
+            if(_doserId ==1 ){
+                _doserId = 0;
+                _displayDoserSelection();
+            }
+
+        }else if(_mode == Cal_SelectVolume){
             if(_calVolume >=10) _calVolume += 10;
             else _calVolume += 5;
             _updateVolumeDisplay(_calVolume);
-        }if(_mode == Cal_InputVolume){
+        }else if(_mode == Cal_InputVolume){
             _realVolume += AdjustUnit;
             _updateVolumeDisplay(_realVolume);
         }
     }
     
     void rotateBackward(){
-        if(_mode == Cal_SelectVolume){
+        if(_mode == Cal_SelectDoser){
+            if(_doserId ==0 ){
+                _doserId = 1;
+                _displayDoserSelection();
+            }
+        }else if(_mode == Cal_SelectVolume){
             if(_calVolume >10) _calVolume -= 10;
             else _calVolume -= 5;
             if(_calVolume < 5) _calVolume = 5;
@@ -1199,7 +1288,11 @@ public:
     }
 
     bool switchPushed(){
-        if(_mode == Cal_SelectVolume){
+        if(_mode == Cal_SelectDoser){
+            controller = _doserId? &dosingController2:&dosingController;
+            EditingText.noblink();
+            _enterSelectVolume();
+        }else if(_mode == Cal_SelectVolume){
             _mode = Cal_RunDoser;
             _enterCalibratingState();
         }else if(_mode == Cal_RunDoser){
@@ -1232,7 +1325,7 @@ public:
             EditingText.noblink();
             _dosing =false;
             _accTime += millis() - _startTime;
-            lcdPrint_P(0,1,strEnter,true);
+            lcdPrint_P(1,1,strEnter,true);
         }
     }
 protected:
@@ -1243,28 +1336,45 @@ protected:
     float _realVolume;
     uint32_t _startTime;
     uint32_t _accTime;
+    uint8_t  _doserId;
+    DosingController *controller;
 
+    void _displayDoserSelection(){
+        lcdClear(7,1,9);
+        EditingText.setText_P(7,1,_doserId? strSecondary:strPrimary);
+        EditingText.blink();
+    }
+
+    void _enterSelectVolume(){
+        _mode = Cal_SelectVolume;
+        _calVolume = 10;
+        lcdPrint_P(1,1,strCalBy,true);
+        if(ReadSetting(useWeight)) lcdWriteAt(14,1,'g');
+        else lcdPrint_P(14,1,strMl);
+
+        _updateVolumeDisplay(_calVolume);
+    }
+    
     void _enterCalibratingState(){
         EditingText.noblink();
         _dosed=false;
-        dosingController.resetDoseAdjustment();
-        dosingController.startCalibrate();
-        //lcdPrint_P(0,1,strRunDoser,true);
+        controller->resetDoseAdjustment();
+        controller->startCalibrate();
         lcdClearLine(1);
-        EditingText.setText_P(0,1,strRunDoser);
+        EditingText.setText_P(1,1,strRunDoser);
         EditingText.blink();
-        dosingController.setMode(DosingModeManual);
+        controller->setMode(DosingModeManual);
         _accTime =0;
     }
 
     void _enterInputVolumeState(){
         _realVolume = _calVolume;
-        lcdPrint_P(0,1,strAdjust,true);
+        lcdPrint_P(1,1,strAdjust,true);
         if(ReadSetting(useWeight)) lcdWriteAt(14,1,'g');
         else    lcdPrint_P(14,1,strMl);
 
         _updateVolumeDisplay(_realVolume);
-         dosingController.setMode(DosingModeDisabled);
+         controller->setMode(DosingModeDisabled);
     }
 
     void _updateVolumeDisplay(float vol){
@@ -1274,12 +1384,12 @@ protected:
     }
 
     void _finishCalibrate(){
-        dosingController.calibrate(_realVolume);
+        controller->calibrate(_realVolume);
     }
     //0123456789012345
     //Rate  099.34ml/s
     void _showResult(){
-        lcdPrint_P(0,1,strRate,true);
+        lcdPrint_P(1,1,strRate,true);
         float rate =_realVolume / float(_accTime) * 1000;
         lcdPrintAt(6,1,rate,6,2);
         if(ReadSetting(useWeight)) lcdPrint_P(12,1,strGramPerSec);
@@ -1292,6 +1402,7 @@ protected:
 // micro adjustment
 // to calculate Hysteresis by average
 typedef enum _DoseCalibrationState{
+    CS_SelectDoser,
     CS_SelectAmout,
     CS_SelectCount,
     CS_ReadyToRun,
@@ -1322,7 +1433,7 @@ const char strCalibratedTo[] PROGMEM="Calibrated to";
 
 const char strAmount[] PROGMEM="Amount";
 const char strCount[] PROGMEM="Count";
-const char strRun[] PROGMEM="Run";
+const char strRun[] PROGMEM="Go";
 //const char strAdjust[] PROGMEM="Adjust";
 
 class DoseCalibration:public SugarBaby{
@@ -1331,20 +1442,20 @@ public:
     ~DoseCalibration(){}
 
     void show(){
-        _state = CS_SelectAmout;
-        _amount = 5;
-        _count = 10;
-        lcdPrint_P(0,0,strCalibrateBy,true);
-        // show Amount
-        lcdPrint_P(0,1,strAmount);
-        if(ReadSetting(useWeight)) lcdWriteAt(14,1,'g');
-        else lcdPrint_P(14,1,strMl);
-
-        _showCalAmount();
+        _state = CS_SelectDoser;
+        lcdPrint_P(TitleCol,TitleRow,strCalibration,true);
+        lcdPrint_P(1,1,strDoser);
+        _doserId = 0;
+        _displayDoserSelection();
     }
 
     void rotateForward(){
-        if(_state == CS_SelectAmout){
+        if(_state == CS_SelectDoser){
+            if(_doserId ==1){
+                _doserId =0;
+                _displayDoserSelection();
+            }
+        }else if(_state == CS_SelectAmout){
             _amount += AdjustUnit;
             _showCalAmount();
         }else if(_state == CS_SelectCount){
@@ -1359,7 +1470,12 @@ public:
     }
 
     void rotateBackward(){
-        if(_state == CS_SelectAmout){
+        if(_state == CS_SelectDoser){
+            if(_doserId ==0){
+                _doserId =1;
+                _displayDoserSelection();
+            }
+        }else if(_state == CS_SelectAmout){
             if(_amount > AdjustUnit){
                 _amount -= AdjustUnit;
                 _showCalAmount();
@@ -1378,11 +1494,15 @@ public:
     }
 
     bool switchPushed(){
-        if(_state == CS_SelectAmout){
+        if(_state == CS_SelectDoser){
+            controller = _doserId? &dosingController2:&dosingController;
+            EditingText.noblink();
+            _startEnteringAmount();
+        }else if(_state == CS_SelectAmout){
             // show
             // Count    100
             EditingText.noblink();
-            lcdPrint_P(0,1,strCount,true); //rare case            
+            lcdPrint_P(1,1,strCount,true); //rare case            
             _showTotalCount();
             _state = CS_SelectCount;
         }else if(_state == CS_SelectCount){
@@ -1392,7 +1512,7 @@ public:
             //Run 10.12ml *100
             // the "count" numer shold already be there
             // show extra volume
-            lcdPrint_P(0,1,strRun);
+            lcdPrint_P(1,1,strRun);
             lcdPrintAt(3,1,_amount,6,2);
             if(ReadSetting(useWeight)) lcdWriteAt(9,1,'g');
             else lcdPrint_P(9,1,strMl);
@@ -1406,9 +1526,9 @@ public:
             _dropCount = 0;
 
             _dosing = true;
-            dosingController.resetDoseAdjustment();
-            dosingController.setDosage(_amount);
-            dosingController.dose();
+            controller->resetDoseAdjustment();
+            controller->setDosage(_amount);
+            controller->dose();
         }else if(_state == CS_Running){
             /* do nothing */
         }else if(_state == CS_Adjust){
@@ -1419,10 +1539,10 @@ public:
             // 
             //
             float adjust =_amount - _realAmount/(float)_count;
-            dosingController.setDoseAdjustment( adjust );
+            controller->setDoseAdjustment( adjust );
             //0123456789012345
             //Adjsut   -0.12ml
-            lcdPrint_P(0,1,strAdjust,true);
+            lcdPrint_P(1,1,strAdjust,true);
             lcdPrintAt(9,1,adjust,5,2);
             if(ReadSetting(useWeight)) lcdWriteAt(14,1,'g');
             else lcdPrint_P(14,1,strMl);
@@ -1455,12 +1575,28 @@ public:
 
         if(millis() - _dropEndTime > CalibrationDropDelay ){
             _dosing = true;
-            dosingController.dose();
+            controller->dose();
         }
     }
 
 protected:
+    void _displayDoserSelection(){
+        lcdClear(7,1,9);
+        EditingText.setText_P(7,1,_doserId? strSecondary:strPrimary);
+        EditingText.blink();
+    }
 
+    void _startEnteringAmount(){
+        _state = CS_SelectAmout;
+        _amount = 5;
+        _count = 10;
+        lcdPrint_P(TitleCol,TitleRow,strCalibrateBy,true);
+        // show Amount
+        lcdPrint_P(1,1,strAmount,true);
+        if(ReadSetting(useWeight)) lcdWriteAt(14,1,'g');
+        else lcdPrint_P(14,1,strMl);
+        _showCalAmount();
+    }
 /*
 0123456789012345
 Calibrate by
@@ -1485,7 +1621,7 @@ Calibrating
 
 
     void _displayCalibrating(){
-        lcdPrint_P(0,0,strCalibrating,true);
+        lcdPrint_P(TitleCol,TitleRow,strCalibrating,true);
         lcdClear(0,1,11);
         lcd->setCursor(12,1);
         lcd->write('/');
@@ -1506,7 +1642,7 @@ Calibrated to
 */
 
     void _displayAdjusting(){
-        lcdPrint_P(0,0,strCalibratedTo,true);
+        lcdPrint_P(TitleCol,TitleRow,strCalibratedTo,true);
         lcdClearLine(1);
         if(ReadSetting(useWeight)) lcdWriteAt(14,1,'g');
         else lcdPrint_P(14,1,strMl);
@@ -1525,6 +1661,8 @@ Calibrated to
     float _realAmount;
     DoseCalibrationState _state;
     bool _dosing;
+    DosingController *controller;
+    uint8_t _doserId;
 };
 
 /*********************************************************************************/
@@ -1533,13 +1671,19 @@ Calibrated to
 #define MaximumDelayTime 10
 #define MaximumCoolTime 10   // in 0.5 seconds
 
-const char strDosingControl[] PROGMEM ="Dosing Control";
+const char strDosing[] PROGMEM ="Dosing";
 const char strControl[] PROGMEM ="Control";
 const char strDelay[] PROGMEM ="Delay";
 const char strCoolTime[] PROGMEM ="CoolTime";
 
 const char strButton[] PROGMEM ="Button";
 const char strSensor[] PROGMEM ="Sensor";
+/*
+0123456789012345
+Dosing Secondary
+TriggerSecondary
+ Doser 
+*/
 
 enum TSState{
     TS_TrigerType=0,
@@ -1553,6 +1697,7 @@ public:
     ~TriggerSettings(){}
 
     void show(){
+        _doserId = 0;
         _editing =false;
         _state = TS_TrigerType;
         _displayItems();
@@ -1566,26 +1711,22 @@ public:
                     _displayTrigerType();
                     _dirty = true;
                 }
-            }else{ // if(_state == TS_DelayTime){
+            }else{ // if(_state == TS_DelayTime || TS_CoolTime){
                 if(_timeval < MaximumDelayTime){
                     _timeval ++;
                     _displayTime(_timeval);
                     _dirty = true;
                 }
-            } /*else if(_state == TS_CoolTime){
-                if(_timeval < MaximumCoolTime){
-                    _timeval ++;
-                    _displayTime(_timeval);
-                    _dirty = true;
-                }
-            }   */         
-
+            } 
         }else{
             // non editing
-            if((int)_state > (int)TS_TrigerType){
+            if(_doserId == 1 && _state == TS_TrigerType){
+                _doserId =0;
+                _state = TS_CoolTime;
+                _displayItems();
+            }else if((int)_state > (int)TS_TrigerType){
                 _state =(TSState) ((int)_state -1);
                 _displayItems();
-                _dirty = true;
             }
         }
     }
@@ -1604,17 +1745,15 @@ public:
                     _displayTime(_timeval);
                     _dirty = true;
                 }
-            /*}else if(_state == TS_CoolTime){
-                if(_timeval > 0){
-                    _timeval --;
-                    _displayTime(_timeval);
-                    _dirty = true;
-                } */
             }
             
         }else{
             // non editing
-            if((int)_state < (int)TS_Back){
+            if(_doserId ==0 && _state==TS_CoolTime){
+                _doserId =1;
+                _state =TS_TrigerType;
+                _displayItems();
+            }else if((int)_state < (int)TS_Back){
                 _state =(TSState) ((int)_state +1);
                 _displayItems();
             }
@@ -1628,11 +1767,11 @@ public:
             EditingText.noblink();
 
             if(_state == TS_TrigerType){
-                if(_dirty) WriteSetting(triggerType, _trigger);
+                if(_dirty) UpdateDoserSetting(_doserId,triggerType, _trigger);
             }else if(_state == TS_DelayTime){
-                if(_dirty) WriteSetting(delayTime,_timeval);
+                if(_dirty) UpdateDoserSetting(_doserId,delayTime,_timeval);
             }else if(_state == TS_CoolTime){
-                 if(_dirty) WriteSetting(coolTime,_timeval);
+                 if(_dirty) UpdateDoserSetting(_doserId,coolTime,_timeval);
             }
             _dirty  = false;
 
@@ -1654,33 +1793,36 @@ protected:
     uint8_t _trigger;
     bool _dirty;
     uint8_t _timeval;
+    uint8_t _doserId;
 
     void _displayItems(){
-
         if(_state == TS_TrigerType){
-            lcdPrint_P(0,0,strDosingControl,true);
-            lcdPrint_P(0,1,strControl,true);
-            _trigger = ReadSetting(triggerType);
+            lcdPrint_P(1,0,strDosing);
+            lcdPrint_P(7,0,(_doserId ==0)? strPrimary:strSecondary,true);
+            lcdPrint_P(1,1,strControl,true);
+            _trigger = DoserSetting(_doserId,triggerType);
             _displayTrigerType();
 
         }else if(_state == TS_DelayTime){
-            lcdPrint_P(0,1,strDelay,true);
+            lcdPrint_P(1,1,strDelay,true);
             lcd->setCursor(1,15);
             lcd->write('s');
-            _timeval = ReadSetting(delayTime);
-            _displayTime(_timeval);            
+            _timeval = DoserSetting(_doserId,delayTime);
+            if(_timeval > MaximumDelayTime) _timeval = MaximumDelayTime;
+            _displayTime(_timeval); 
         }else if(_state == TS_CoolTime){
-            lcdPrint_P(0,1,strCoolTime,true);
+            lcdPrint_P(7,0,(_doserId ==0)? strPrimary:strSecondary,true);
+            lcdPrint_P(1,1,strCoolTime,true);
             lcd->setCursor(1,15);
             lcd->write('s');
-            _timeval = ReadSetting(coolTime);
+            _timeval = DoserSetting(_doserId,coolTime);
+            if(_timeval > MaximumDelayTime) _timeval = MaximumDelayTime;
             _displayTime(_timeval);            
         }else{ // _state == TS_Back
-            lcdPrint_P(0,1,strBack,true);
+            lcdPrint_P(1,1,strBack,true);
         }
         _dirty = false;
-    }
-
+    }    
     void _displayTrigerType(){
         if(_trigger){
             // sensor
@@ -1693,6 +1835,10 @@ protected:
 //0123456789012345
 //Delay       5.0s
     void _displayTime(uint8_t val){
+        DBGPrint(F("Time of "));
+        DBGPrint(_doserId);
+        DBGPrint(F(": "));
+        DBGPrintln(val);
         float fvalue = (float)val * 0.5;
         EditingText.setNumber(12,1,fvalue,3,1);
         EditingText.show();
@@ -1710,7 +1856,7 @@ enum SoundSettinState{
     SSS_Back=3
 };
 
-//const char strButton[] PROGMEM="Button";
+const char strBuzz[] PROGMEM="Buzz";
 const char strDoseStart[] PROGMEM="Dose Start";
 const char strDoseEnd[] PROGMEM="Dose End";
 
@@ -1728,11 +1874,11 @@ public:
     SoundSetting(){}
     ~SoundSetting(){}
 
-
     void show(){
         _editing=false;
         _state = SSS_Button;
-        lcdPrint_P(0,0,strSoundSetting,true);
+        _doserId=0;
+        lcdPrint_P(1,0,strBuzz,true);
         
         _displayItem();
     }
@@ -1746,7 +1892,11 @@ public:
                 _displayOnOff();
             }
         }else{
-            if((uint8_t)_state >(uint8_t)SSS_Button){
+            if(_doserId ==1 && _state == SSS_Button){
+                _doserId =0;
+                _state = SSS_DoseEnd;
+                _displayItem();
+            }else if((uint8_t)_state >(uint8_t)SSS_Button){
                 _state = (SoundSettinState)( (uint8_t)_state - 1);
                 _displayItem();
             }
@@ -1762,6 +1912,11 @@ public:
                 _displayOnOff();
             }
         }else{
+            if(_doserId ==0 && _state == SSS_DoseEnd){
+                _doserId =1;
+                _state = SSS_Button;
+                _displayItem();
+            }else 
             if((uint8_t)_state <(uint8_t)SSS_Back){
                 _state = (SoundSettinState)( (uint8_t)_state + 1);
                 _displayItem();
@@ -1773,7 +1928,11 @@ public:
         if(_editing){
             _editing = false;
             EditingText.noblink();
-            if(_dirty) WriteSettingAddress(AddressOfSetting(beepButton) + _state, _on? 1:0);
+            
+            if(_state == SSS_Button) UpdateDoserSetting(_doserId,beepButton, _on? 1:0);
+            else if(_state == SSS_DoseStart)  UpdateDoserSetting(_doserId,beepDoseStart,  _on? 1:0);
+            else UpdateDoserSetting(_doserId,beepDoseEnd, _on? 1:0);
+
             _dirty = false;
         }else{
             if(_state == SSS_Back){
@@ -1793,15 +1952,19 @@ protected:
     bool _on;
     bool _editing;
     bool _dirty;
+    uint8_t _doserId;
 
     void _displayItem(){
         if(_state != SSS_Back){
-            lcdPrint_P(0,1,SoundSettingLabels[_state],true);
-            _on =ReadSettingAddress(AddressOfSetting(beepButton) + _state) != 0;
+            lcdPrint_P(7,0,(_doserId==0)? strPrimary:strSecondary,true);
+            lcdPrint_P(1,1,SoundSettingLabels[_state],true);
+            if(_state == SSS_Button) _on =DoserSetting(_doserId,beepButton) != 0;
+            else if(_state == SSS_DoseStart)  _on =DoserSetting(_doserId,beepDoseStart) != 0;
+            else _on =DoserSetting(_doserId,beepDoseEnd) != 0;
             _dirty =false;
             _displayOnOff();
         }else{
-            lcdPrint_P(0,1,strBack,true);
+            lcdPrint_P(1,1,strBack,true);
         }
     }
 
@@ -1833,7 +1996,7 @@ public:
         _idx=0;
         _editing = false;
         _dirty = false;
-        lcdPrint_P(0,0,strUnitSetting,true);
+        lcdPrint_P(1,0,strUnitSetting,true);
         _showItem();
     }
     
@@ -1893,11 +2056,11 @@ protected:
     uint8_t _idx;
     void _showItem(){
         if(_idx ==0){
-            lcdPrint_P(0,1,strUse,true);
+            lcdPrint_P(1,1,strUse,true);
             _useWeight =ReadSetting(useWeight);
             _printValue();
         }else{
-             lcdPrint_P(0,1,strBack,true);
+             lcdPrint_P(1,1,strBack,true);
         }
 
     }
@@ -1950,7 +2113,7 @@ public:
       void show(){
         _editing = false;
         _setIdx =0;
-        lcdPrint_P(0,0,strUnitSetting,true);
+        lcdPrint_P(1,0,strUnitSetting,true);
         _showItem();
     }
 
@@ -2039,12 +2202,12 @@ protected:
 
     void _showItem(){
         if(_setIdx ==IndexInput){
-            lcdPrint_P(0,1,strInput);
+            lcdPrint_P(1,1,strInput);
             _inputBeer = ReadSetting(inputBeer);
             _printInputValue();
 
         }else if(_setIdx ==IndexSugar){
-            lcdPrint_P(0,1,strBrix,true);
+            lcdPrint_P(1,1,strBrix,true);
             lcd->setCursor(13,1);
             lcd->write(DegreeChar);
             lcd->write('B');
@@ -2053,20 +2216,20 @@ protected:
             if(_sugarRatio>100) _sugarRatio=100;
             _printSugarRatio();
         }else if(_setIdx ==IndexCo2Volume){
-            lcdPrint_P(0,1, strCo2Vol, true);
+            lcdPrint_P(1,1, strCo2Vol, true);
             _carbonation = ReadSetting(carbonation);
             if(_carbonation < LowestCarbonation) _carbonation = LowestCarbonation;
             else if(_carbonation > HighestCarbonation) _carbonation = HighestCarbonation;
             _printCo2Volume();
         }else if(_setIdx ==IndexBeerTemp){    
-            lcdPrint_P(0,1,strBeerTemp,true);
+            lcdPrint_P(1,1,strBeerTemp,true);
             lcd->setCursor(14,1);
             lcd->write(DegreeChar);
             lcd->write('C');
             _beerTemperature = ReadSetting(beerTemperature);
             _printBeerTemp();
         }else if(_setIdx == IndexBack){
-            lcdPrint_P(0,1,strBack,true);
+            lcdPrint_P(1,1,strBack,true);
         }
         _dirty = false;
     }
@@ -2095,6 +2258,184 @@ protected:
     }
 
 };
+
+/*************************************************************************/
+/* Secondary doser setting */
+/*
+0123456789012345
+ SecondaryDoser
+*/
+const char strSecondaryDoser[] PROGMEM="SecondaryDoser";
+const char strEnable[] PROGMEM =  "Enable";
+const char strYes[] PROGMEM = "Yes";
+const char strNo[] PROGMEM =  "No ";
+const char strRatio[] PROGMEM = "Ratio";
+
+
+#define SecondaryIndexEnable 0
+#define SecondaryIndexRatio 1
+#define SecondaryIndexBack 2
+
+#define SecondaryIndexRatioInputInteger 3
+#define SecondaryIndexRatioInputFraction 4
+
+
+class SecondarySetting:public SugarBaby{
+public:
+    SecondarySetting(){}
+    ~SecondarySetting(){}
+
+    void show(){
+        lcdPrint_P(TitleCol,TitleRow,strSecondaryDoser);
+        _setIdx=SecondaryIndexEnable;
+        _editing=false;
+        _showItems();
+    }
+
+    void rotateForward(){
+        if(_editing){
+             if(_setIdx == SecondaryIndexEnable){
+                 if(!_enabled){
+                     _enabled = true;
+                     EditingText.setText_P(13,1,strYes);
+                 }
+             }else if(_setIdx ==SecondaryIndexRatioInputInteger){
+                 if(_ratioInteger < MaximumDoserRatio){
+                     _ratioInteger ++;
+                     _updateIntegerPart();
+                 } 
+             }else{
+                 if(_ratioFraction < 99){
+                     _ratioFraction ++;
+                     _updateFractionPart();
+                 } 
+             }
+
+        }else{
+            if(_setIdx > 0){
+                _setIdx--;
+                _showItems();
+            }
+        }
+    }
+
+    void rotateBackward(){
+        if(_editing){
+             if(_setIdx == SecondaryIndexEnable){
+                 if(_enabled){
+                     _enabled = false;
+                     EditingText.setText_P(13,1,strNo);
+                 }
+             }else if(_setIdx ==SecondaryIndexRatioInputInteger){
+                 if(_ratioInteger > 0){
+                     _ratioInteger --;
+                     _updateIntegerPart();
+                 } 
+             }else{
+                 if(_ratioFraction > 0){
+                     _ratioFraction --;
+                     _updateFractionPart();
+                 } 
+             }
+        }else{
+            if(_setIdx <SecondaryIndexBack){
+                _setIdx ++;
+                _showItems();
+            }
+        }
+    }
+    
+    bool switchPushed(){
+        if(_editing){
+            if(_setIdx == SecondaryIndexEnable){
+                EditingText.noblink();
+                DBGPrint(F("_enabled:"));
+                DBGPrint(_enabled);
+
+                WriteSetting(enableSecondaryDoser,_enabled);
+                DBGPrint(F("enableSecondaryDoser:"));
+                DBGPrintln(Settings.enableSecondaryDoser);
+
+                _editing=false;
+            }else if(_setIdx ==SecondaryIndexRatioInputInteger){
+                EditingText.noblink();
+                _updateFractionPart();
+                EditingText.blink();                
+                _setIdx = SecondaryIndexRatioInputFraction;
+            }else{ //IndexRatioInputFraction
+                EditingText.noblink();
+                _ratio = (float) _ratioInteger  + (float)_ratioFraction/100.0;
+                DBGPrint(F("Ratio:"));
+                DBGPrintln(_ratio);
+                WriteSetting(secondaryDosageRatio,_ratio);
+                _editing=false;
+                _setIdx = SecondaryIndexRatio;
+            }
+        }else{
+            if(_setIdx == SecondaryIndexBack){
+                return true;
+            }else{
+                _editing=true;
+
+                if(_setIdx == SecondaryIndexEnable){
+                    EditingText.blink();
+                }else{
+                    // editing the ratio might be complicated.
+                    // let's use two part, integer and fraction(decimal)
+                    _setIdx= SecondaryIndexRatioInputInteger;
+                    _ratioInteger = floor(_ratio);
+                    _ratioFraction =(int)((_ratio - _ratioInteger)*100.0 + 0.5);
+                    DBGPrint(F("Ratio:"));
+                    DBGPrint(_ratio);
+                    DBGPrint(F(" int:"));
+                    DBGPrint(_ratioInteger);
+                    DBGPrint(F(" fra:"));
+                    DBGPrintln(_ratioFraction);
+
+                    _updateIntegerPart();
+                    EditingText.blink();
+                }
+            }
+        }
+        return false;
+    }
+
+protected:
+    bool _enabled;
+    uint8_t _setIdx;
+    bool _editing;
+    float _ratio;
+    int   _ratioInteger;
+    int   _ratioFraction;
+
+    void _showItems(){
+        if(_setIdx == SecondaryIndexEnable){
+            lcdPrint_P(1,1,strEnable,true);
+            
+            _enabled = ReadSetting(enableSecondaryDoser);
+            DBGPrint(F("enableSecondaryDoser:"));
+            DBGPrint(Settings.enableSecondaryDoser);
+            DBGPrint(F("_enabled:"));
+            DBGPrintln(_enabled);
+
+            EditingText.setText_P(13,1,_enabled? strYes:strNo);
+            EditingText.show();
+        }else if(_setIdx == SecondaryIndexRatio){
+            lcdPrint_P(1,1,strRatio,true);
+            
+            _ratio = ReadSetting(secondaryDosageRatio);
+            lcdPrintAt(10,1,_ratio,6,2); //100.99
+        }else{
+            lcdPrint_P(1,1,strBack,true);
+        }
+    }
+    void _updateIntegerPart(){
+        EditingText.setNumber(10,1,_ratioInteger,3);
+    }
+    void _updateFractionPart(){
+        EditingText.setNumberLeading(14,1,_ratioFraction,2,'0');
+    }
+};
 /*************************************************************************/
 // Main
 /*************************************************************************/
@@ -2108,16 +2449,17 @@ public:
     ~SugarDaddy(){}
 
     void begin(){
-        bool initialized=SettingManager.begin();
+        SettingManager.begin();
         Buzzer.begin();
         lcdInitialize();
 
         switchButton1.begin(BUTTON_PIN);
-        
-        dosingController.begin(switchButton1,STEP_PIN);
+        switchButton2.begin(BUTTON2_PIN);
 
-        if(initialized) _running = &_menuHandler;
-        else _running = &_sugarCalibrate;
+        dosingController.begin(switchButton1,PUMP_PIN);
+        dosingController2.begin(switchButton2,PUMP2_PIN);
+        
+        _running = &_menuHandler;
    
         _running->show();
     }
@@ -2153,6 +2495,10 @@ public:
             _running->dosingStateChanged(dosingController.isDosing());
         }
 
+        if(dosingController2.isDosingStateChanged()){
+            _running->dosingStateChanged(dosingController2.isDosing());
+        }
+
         Buzzer.loop();
         EditingText.loop();
     }
@@ -2184,10 +2530,14 @@ public:
                 _running = & _unitSetting;
                 break;
             case SugarAppPriming:
-                _running=& _priming;
+                _running= & _priming;
                 break;
+            case SugarAppSecondarySetting:
+                _running= & _secondarySetting;
         }
         dosingController.setMode(DosingModeDisabled);
+        dosingController2.setMode(DosingModeDisabled);
+
         lcd->clear();
         _running->show();
     }
@@ -2203,4 +2553,5 @@ protected:
     SoundSetting _soundSetting;
     UnitSetting _unitSetting;
     PrimingSetting _priming;
+    SecondarySetting _secondarySetting;
 };

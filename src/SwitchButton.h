@@ -91,3 +91,5 @@ uint8_t SwitchButton::isrCount=0;
 SwitchButton* SwitchButton::objs[2];
 
 SwitchButton switchButton1;
+
+SwitchButton switchButton2;
