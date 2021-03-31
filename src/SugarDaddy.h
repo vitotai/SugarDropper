@@ -7,7 +7,7 @@
 #include <LiquidCrystal_I2C.h>
 
 
-#define DEBUG_OUT true
+#define DEBUG_OUT false
 
 #if DEBUG_OUT
 #define DBGPrint(...) Serial.print(__VA_ARGS__)
@@ -34,8 +34,8 @@
 #define RB_DT_PIN 10
 #define SW_PIN 11
 
-#define BUTTON_PIN 3
-#define BUTTON2_PIN 2
+#define BUTTON_PIN 2
+#define BUTTON2_PIN 3
 
 #define PUMP_PIN 5
 #define PUMP2_PIN 6
@@ -511,7 +511,7 @@ protected:
   S: total ouput
   
   R * T + L  = S, assuming L is relative small, when R*T is way larger than L, ignore L
-  R*T = S,   R= T/S. 
+  R*T = S,   R= S/T. 
   Then, in Dose calibration
 
   N: number of dosages.
@@ -1429,12 +1429,19 @@ public:
     ~SugarCalibrator(){}
 
     void show(){
-        _mode =Cal_SelectDoser;
         _calVolume = 10;
         lcdPrint_P(TitleCol,TitleRow,strCalibration,true);
-        lcdPrint_P(1,1,strDoser);
+
         _doserId = 0;
-        _displayDoserSelection();
+        if(ReadSetting(enableSecondaryDoser)){
+            lcdPrint_P(1,1,strDoser);
+            _displayDoserSelection();
+            _mode =Cal_SelectDoser;
+        }else{
+            controller = _doserId? &dosingController2:&dosingController;
+            EditingText.noblink();
+            _enterSelectVolume();
+        }
     }
     
 
@@ -1627,11 +1634,18 @@ public:
     ~DoseCalibration(){}
 
     void show(){
-        _state = CS_SelectDoser;
         lcdPrint_P(TitleCol,TitleRow,strCalibration,true);
-        lcdPrint_P(1,1,strDoser);
+        
+        
         _doserId = 0;
-        _displayDoserSelection();
+        if(ReadSetting(enableSecondaryDoser)){
+            _state = CS_SelectDoser;
+            lcdPrint_P(1,1,strDoser);
+            _displayDoserSelection();
+        }else{
+            controller = _doserId? &dosingController2:&dosingController;
+            _startEnteringAmount();
+        }
     }
 
     void rotateForward(){
@@ -1905,7 +1919,8 @@ public:
             } 
         }else{
             // non editing
-            if(_doserId == 1 && _state == TS_TrigerType){
+            if(ReadSetting(enableSecondaryDoser) && 
+               _doserId == 1 && _state == TS_TrigerType){
                 _doserId =0;
                 _state = TS_CoolTime;
                 _displayItems();
@@ -1934,7 +1949,8 @@ public:
             
         }else{
             // non editing
-            if(_doserId ==0 && _state==TS_CoolTime){
+            if( ReadSetting(enableSecondaryDoser) && 
+            _doserId ==0 && _state==TS_CoolTime){
                 _doserId =1;
                 _state =TS_TrigerType;
                 _displayItems();
@@ -1983,28 +1999,29 @@ protected:
     void _displayItems(){
         if(_state == TS_TrigerType){
             lcdPrint_P(1,0,strDosing);
-            lcdPrint_P(7,0,(_doserId ==0)? strPrimary:strSecondary,true);
-            lcdPrint_P(1,1,strControl,true);
+            if(ReadSetting(enableSecondaryDoser))
+                lcdPrint_P(7,0,(_doserId ==0)? strPrimary:strSecondary,true);
+            lcdPrint_P(2,1,strControl,true);
             _trigger = DoserSetting(_doserId,triggerType);
             _displayTrigerType();
 
         }else if(_state == TS_DelayTime){
-            lcdPrint_P(1,1,strDelay,true);
+            lcdPrint_P(2,1,strDelay,true);
             lcd->setCursor(1,15);
             lcd->write('s');
             _timeval = DoserSetting(_doserId,delayTime);
             if(_timeval > MaximumDelayTime) _timeval = MaximumDelayTime;
             _displayTime(_timeval); 
         }else if(_state == TS_CoolTime){
-            lcdPrint_P(7,0,(_doserId ==0)? strPrimary:strSecondary,true);
-            lcdPrint_P(1,1,strCoolTime,true);
+            if(ReadSetting(enableSecondaryDoser)) lcdPrint_P(7,0,(_doserId ==0)? strPrimary:strSecondary,true);
+            lcdPrint_P(2,1,strCoolTime,true);
             lcd->setCursor(1,15);
             lcd->write('s');
             _timeval = DoserSetting(_doserId,coolTime);
             if(_timeval > MaximumDelayTime) _timeval = MaximumDelayTime;
             _displayTime(_timeval);            
         }else{ // _state == TS_Back
-            lcdPrint_P(1,1,strBack,true);
+            lcdPrint_P(2,1,strBack,true);
         }
         _dirty = false;
     }    
@@ -2020,10 +2037,10 @@ protected:
 //0123456789012345
 //Delay       5.0s
     void _displayTime(uint8_t val){
-        DBGPrint(F("Time of "));
+/*        DBGPrint(F("Time of "));
         DBGPrint(_doserId);
         DBGPrint(F(": "));
-        DBGPrintln(val);
+        DBGPrintln(val); */
         float fvalue = (float)val * 0.5;
         EditingText.setNumber(12,1,fvalue,3,1);
         EditingText.show();
@@ -2077,7 +2094,8 @@ public:
                 _displayOnOff();
             }
         }else{
-            if(_doserId ==1 && _state == SSS_Button){
+            if(ReadSetting(enableSecondaryDoser)
+                    && _doserId ==1 && _state == SSS_Button){
                 _doserId =0;
                 _state = SSS_DoseEnd;
                 _displayItem();
@@ -2097,7 +2115,8 @@ public:
                 _displayOnOff();
             }
         }else{
-            if(_doserId ==0 && _state == SSS_DoseEnd){
+            if(ReadSetting(enableSecondaryDoser) &&
+                _doserId ==0 && _state == SSS_DoseEnd){
                 _doserId =1;
                 _state = SSS_Button;
                 _displayItem();
@@ -2141,15 +2160,15 @@ protected:
 
     void _displayItem(){
         if(_state != SSS_Back){
-            lcdPrint_P(7,0,(_doserId==0)? strPrimary:strSecondary,true);
-            lcdPrint_P(1,1,SoundSettingLabels[_state],true);
+            if(ReadSetting(enableSecondaryDoser)) lcdPrint_P(7,0,(_doserId==0)? strPrimary:strSecondary,true);
+            lcdPrint_P(2,1,SoundSettingLabels[_state],true);
             if(_state == SSS_Button) _on =DoserSetting(_doserId,beepButton) != 0;
             else if(_state == SSS_DoseStart)  _on =DoserSetting(_doserId,beepDoseStart) != 0;
             else _on =DoserSetting(_doserId,beepDoseEnd) != 0;
             _dirty =false;
             _displayOnOff();
         }else{
-            lcdPrint_P(1,1,strBack,true);
+            lcdPrint_P(2,1,strBack,true);
         }
     }
 
@@ -2241,11 +2260,11 @@ protected:
     uint8_t _idx;
     void _showItem(){
         if(_idx ==0){
-            lcdPrint_P(1,1,strUse,true);
+            lcdPrint_P(2,1,strUse,true);
             _useWeight =ReadSetting(useWeight);
             _printValue();
         }else{
-             lcdPrint_P(1,1,strBack,true);
+             lcdPrint_P(2,1,strBack,true);
         }
 
     }
@@ -2387,12 +2406,12 @@ protected:
 
     void _showItem(){
         if(_setIdx ==IndexInput){
-            lcdPrint_P(1,1,strInput);
+            lcdPrint_P(2,1,strInput);
             _inputBeer = ReadSetting(inputBeer);
             _printInputValue();
 
         }else if(_setIdx ==IndexSugar){
-            lcdPrint_P(1,1,strBrix,true);
+            lcdPrint_P(2,1,strBrix,true);
             lcd->setCursor(13,1);
             lcd->write(DegreeChar);
             lcd->write('B');
@@ -2401,20 +2420,20 @@ protected:
             if(_sugarRatio>100) _sugarRatio=100;
             _printSugarRatio();
         }else if(_setIdx ==IndexCo2Volume){
-            lcdPrint_P(1,1, strCo2Vol, true);
+            lcdPrint_P(2,1, strCo2Vol, true);
             _carbonation = ReadSetting(carbonation);
             if(_carbonation < LowestCarbonation) _carbonation = LowestCarbonation;
             else if(_carbonation > HighestCarbonation) _carbonation = HighestCarbonation;
             _printCo2Volume();
         }else if(_setIdx ==IndexBeerTemp){    
-            lcdPrint_P(1,1,strBeerTemp,true);
+            lcdPrint_P(2,1,strBeerTemp,true);
             lcd->setCursor(14,1);
             lcd->write(DegreeChar);
             lcd->write('C');
             _beerTemperature = ReadSetting(beerTemperature);
             _printBeerTemp();
         }else if(_setIdx == IndexBack){
-            lcdPrint_P(1,1,strBack,true);
+            lcdPrint_P(2,1,strBack,true);
         }
         _dirty = false;
     }
@@ -2597,7 +2616,7 @@ protected:
 
     void _showItems(){
         if(_setIdx == SecondaryIndexEnable){
-            lcdPrint_P(1,1,strEnable,true);
+            lcdPrint_P(2,1,strEnable,true);
             
             _enabled = ReadSetting(enableSecondaryDoser);
             DBGPrint(F("enableSecondaryDoser:"));
@@ -2608,12 +2627,12 @@ protected:
             EditingText.setText_P(13,1,_enabled? strYes:strNo);
             EditingText.show();
         }else if(_setIdx == SecondaryIndexRatio){
-            lcdPrint_P(1,1,strRatio,true);
+            lcdPrint_P(2,1,strRatio,true);
             
             _ratio = ReadSetting(secondaryDosageRatio) * 100.0;
             lcdPrintAt(10,1,_ratio,6,2); //100.99
         }else{
-            lcdPrint_P(1,1,strBack,true);
+            lcdPrint_P(2,1,strBack,true);
         }
     }
     void _updateIntegerPart(){
