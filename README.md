@@ -18,7 +18,9 @@ Connections
 Pins    |  connects to | Note
 --------|:-----|------------------------
 D2   | Button or QT30CM input | 
-D5   | Relay Module |
+D3   | Secondary Doser button/sensor |
+D5   | Relay Module IN |
+D6   | Secondary Relay Module IN |
 D9   | CLK of K040 |
 D10  | DT of K040 |
 D11  | SW of K040 |
@@ -40,10 +42,11 @@ Setting Items   | Description
 ----------|:------------------
 Calibration | To clibrate the flow rate of Peristaltic pump. First, input the rough amount, then push button to start running. When rough amount is output, push the button to stop. Measure the real amount by a scale, then input real amount. (The way to start and stop running depends on the triggering setting.)
 Dose Calibrate | To derive a correction for one cycle of start and stop. First, input the amount of each drop, and then the times. Push enter to start. When finished, input the real amount of sugar solution dropped. Note, the correction value is reset to zero when "Calibration" procedure is performed. (If a slow peristaltic pump is used, it is not really necessary.) 
-Trigger Setting | The way to trigger sugar running. **Dosing Control**: Button or Sensor. **Delay**: the delay to run the pump. **Cool Time**: minimum gap between dropping. 
+Dosing Control | The way to trigger sugar running. **Control**: Button or Sensor. **Delay**: the delay to run the pump. **Cool Time**: minimum gap between dropping. 
 Priming   | **Input**: input of **Beer Vol** or **sugar** amount. **Brix**: sugar solution density. **CO2 Vol.**: desired Co2 volume. **Beer Temp.**: beer temperature to calculate priming sugar.
 Sound Setting | Buzz or not on events: **Button** (pressed), **Dose Start**, **Dose End**.
-Unit | Volume or Weight. If the density of sugar solution is even. The volume is proportional to weight. However, different density of sugar solution has different flow rate according to my experiments. 
+Unit | **Volume** or Weight. If the density of sugar solution is even. The volume is proportional to weight. However, different density of sugar solution has different flow rate according to my experiments. 
+2nd Doser | Enable or Disable secondary doser. The **Auto(%)** is used for automatic mode to calculate output of secondary. If **beer vol** is selected in **Priming** setting, beer volume input is used to calculate the output of secondary doser. If **Sugar** is selected, sugar amount is used to calculate. The unit is %, so 1 means 1%. eg. 3.3g or ml for 330ml beer volume, or 0.03g for 3g sugar amount. If the value is set to 0(zero), then there is no relation with primary doser. You will/can input the amount of secondary doser manually.
 
 ### Consideration of Peristaltic pump
 
@@ -55,9 +58,20 @@ So, in 1 and 3 seconds, the flow rates are
 
 The is the rough requirement of peristaltic pumps.
 
-### Triggering
+(One second is **longer** than you might have thought. Try minicing bottling action, and insert an action of holding the bottle for one second. You will see.)
+
+### Control
 Button is simple to use. Press the button to dose. In manual mode, press to start, and press again to stop. "Delay" is usually zero and "cool time" can be zero, too.
 Sensor works differently. A small value of delay is necessary because usually the sensor senses before the bottle is really in place. Non-zero Cool Time is good for preventing mis-triggering. In Manual mode, to stop running, move the bottle/container out of the sensor. In automatic mode, running is stop if the snesor detects the container is out of place. 
+
+### Secondary Doser
+Secondary doser might be helpful to dose tinctured spice.
+In manual mode, secondary doser runs independantly. While in Auto mode, the dosage of secondary doser might be linked to primary or not. If it is not linked, i.e. the "Auto(%)" value is 0(zero), then **Long Press** the rotary encoder to switch input to secondary dosage. **Long press** again to back to normal primary dosage input.
+
+# Tips
+- Run manual mode to suck liquid to tube before running or calibration.
+- Different solutions have different viscosity and different flow speed. Don't calibrate only with water. In my experience, sugar solution of 70Brix is like 1/4 rate of water, while 50Brix is almost equal to water. 
+- QT30CM has different types. You should choose NPN Normal Open one, which outputs **LOW** when blocked.
 
 # Note
 It is a simple but helpful, yet fun, project. Use the code as you like, and modify the code whatever you want.
