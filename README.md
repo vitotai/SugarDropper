@@ -1,16 +1,16 @@
 # SugarDropper
 SugarDropper is designed for homebrewers to to dose precise sugar solution into bottles.
 Batch priming by using bottling bucket or not is simple, but the introduce of oxygen is inevitable, i.e. either at the time the beer runs into bucket or fermenters are opened and sugar is dropped. 
-Adding priming sugar into bottles alleviates oxygen problem a little bit, but it is PITA. It is the second worst thing for me in bottling. SugarDropper is a simple project that help me in bottling day.
+Adding priming sugar into bottles alleviates oxygen problem a little bit, but it is PITA, which is the second worst thing for me in bottling. SugarDropper is a simple project that help me in bottling day.
 
 ## Hardware Component
 - Arduino Nano or Uno
 - HD44780 type 16x2 I2C LCD
 - KY-040 rotary encoder module
-- One way Realy module
+- One way Relay module, or two way relay module
 - Buzzer
 - Button or QT30CM infra-red sensor
-- Peristaltic pump with tube
+- Peristaltic pump with tube, two for secondary doser
 - wires, box, and etc.
 
 Connections

@@ -7,7 +7,7 @@
 #include <LiquidCrystal_I2C.h>
 
 
-#define DEBUG_OUT false
+#define DEBUG_OUT true
 
 #if DEBUG_OUT
 #define DBGPrint(...) Serial.print(__VA_ARGS__)
@@ -81,6 +81,8 @@ typedef enum _SugarAppId{
 #define DosingSymbolNone ' '
 #define DegreeChar 0b11011111
 #define SecondarySymbolChar 3
+#define DosedSymbol 4
+#define WaitSymbol 5
 
 LiquidCrystal_I2C *lcd;
 
@@ -120,7 +122,27 @@ byte Rev2ndBitmap[8] = {
     0b10001, 
     0b11111
 };
+byte WaitBitmap[8]={
+    0b00000,
+    0b11111,
+    0b01010,
+    0b01010,
+    0b00100,
+    0b01010,
+    0b01010,
+    0b11111
+};
 
+byte DosedBitmap[8]={
+    0b00000,
+	0b01010,
+	0b01010,
+	0b10001,
+	0b10001,
+	0b11001,
+	0b10111,
+	0b11111
+};
 
 void lcdInitialize(){
     	DBGPrintln("Scanning I2C\n");
@@ -153,6 +175,9 @@ void lcdInitialize(){
         lcd->createChar(DrosingSymbolChar,DropBitmap);
         lcd->createChar(RevDrosingSymbolChar,EmptyDropBitmap);
         lcd->createChar(SecondarySymbolChar,Rev2ndBitmap);
+        lcd->createChar(DosedSymbol,DosedBitmap);
+        lcd->createChar(WaitSymbol,WaitBitmap);
+
         lcd->noCursor();
 }
 void lcdPrintFixedSpace(byte col, byte row,byte lead,const char* str,const char leading=' '){
@@ -615,6 +640,7 @@ enum DosingState{
 DSIdle,
 DSPrepareToDose,
 DSDosing,
+DSDosed, // for sensor
 DSCoolTime
 };
 //******************************************************************
@@ -735,6 +761,7 @@ protected:
     DosingMode _mode;
     DosingState _state;
     bool       _isPositionSensor;
+    bool       _inPosition;
     uint32_t   _dosingDelay;
     uint32_t   _coolTime;
 
@@ -742,6 +769,7 @@ protected:
     uint32_t   _calStarSteps;
 
     void _handleSensorState(bool inPosition){
+        _inPosition = inPosition;
         if(inPosition){
             if(_mode == DosingModeSingleShot || _mode == DosingModeManual){
                 if(_state==DSIdle){
@@ -757,10 +785,15 @@ protected:
             if(_doser.running()){
                 _doser.stop();
                 DBGPrintln(F("Forced Stop"));
+                // doser state changed will be called
+                // and state change will be done there.
             }else if (_state==DSPrepareToDose){
                 _state=DSIdle;
                 lcdDosingSymbol(DosingSymbolNone,_id);
                 DBGPrintln(F("Forced Stop"));
+            }else if(_state == DSDosed){
+                // dosed bottle removed, enter cooling time
+                _enterWaitCoolingState();
             }
         }
     }
@@ -787,18 +820,32 @@ protected:
             }
         }
     }
+    void _enterWaitCoolingState(){
+        lcdDosingSymbol(WaitSymbol,_id);
+        _state = DSCoolTime;
+        _timeToAction = millis() + _coolTime;
+    }
+    void _enterDosedState(){
+        lcdDosingSymbol(DosedSymbol,_id);
+        _state = DSDosed;
+    }
 
     void _processStateForDropingStateChange(bool dosing){
         if(! dosing){ // dosing end
-            _timeToAction = millis() + _coolTime;
             if(_mode == DosingModeDisabled){
                 lcdDosingSymbol(DosingSymbolNone,_id);
                 _state = DSIdle;
             }else{
-                lcdDosingSymbol(RevDrosingSymbolChar,_id);
-                _state = DSCoolTime;
+                if(_isPositionSensor){
+                    if( _mode == DosingModeManual || !_inPosition){
+                        _enterWaitCoolingState();
+                    }else{
+                        _enterDosedState();
+                    }
+                } else{
+                    _enterWaitCoolingState();
+                }
             }
-            
         }
     }
 
@@ -1379,11 +1426,17 @@ protected:
     void _updateRunningInfo(uint8_t idx){
         if(_doserRunning[idx]){
             if( millis() - _lastUpdate[idx] > MinimumUpdateTime){
+                DBGPrint(F("_accumulatedTime[idx] running, idx:"));
+                DBGPrint(idx);
+                DBGPrint(F(" acc:"));
+                DBGPrintln(_accumulatedVolume[idx]);
+
                 _lastUpdate[idx] = millis();
+
                 _updateInfo(idx==0? _primaryRow:1,
                     _accumulatedTime[idx] +  millis() - _startedTime[idx],
                     _accumulatedVolume[idx] + 
-                    idx==0? dosingController.getDosingVolume():dosingController2.getDosingVolume());
+                    (idx==0? dosingController.getDosingVolume():dosingController2.getDosingVolume()));
             }
         }
 
