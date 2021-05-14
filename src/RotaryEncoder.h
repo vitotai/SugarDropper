@@ -26,6 +26,7 @@ typedef enum{
 #define HS_R_CW_BEGIN_M 0x4
 #define HS_R_CCW_BEGIN_M 0x5
 
+#if HALFSTEP
 const uint8_t PROGMEM hs_ttable[7][4] = {
 	// R_START (00)
 	{HS_R_START_M,            HS_R_CW_BEGIN,     HS_R_CCW_BEGIN,  R_START},
@@ -41,7 +42,7 @@ const uint8_t PROGMEM hs_ttable[7][4] = {
 	{HS_R_START_M,            HS_R_CCW_BEGIN_M,  HS_R_START_M,    R_START | DIR_CCW},
 	{R_START, R_START, R_START, R_START}
 };
-#if 0
+#else
 // full steps
 #define R_CW_FINAL 0x1
 #define R_CW_BEGIN 0x2
@@ -111,9 +112,11 @@ class RotaryEncoder
 
         unsigned char pinstate = (currPinB << 1) | currPinA;
 
-
+		#if HALFSTEP
 		_state = pgm_read_byte(&(hs_ttable[_state & 0xf][pinstate]));
-		//_state = pgm_read_byte(&(ttable[_state & 0xf][pinstate]));
+		#else
+		_state = pgm_read_byte(&(ttable[_state & 0xf][pinstate]));
+		#endif
     	// Get emit bits, ie the generated event.
 
 	    uint8_t dir = _state & 0x30;
