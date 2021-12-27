@@ -47,6 +47,7 @@ Priming   | **Input**: input of **Beer Vol** or **sugar** amount. **Brix**: suga
 Sound Setting | Buzz or not on events: **Button** (pressed), **Dose Start**, **Dose End**.
 Unit | **Volume** or Weight. If the density of sugar solution is even. The volume is proportional to weight. However, different density of sugar solution has different flow rate according to my experiments. 
 2nd Doser | Secondary doser usage: **Disabled**, **Synchron(ized)**, and **Seperate**. **Synchronized** mode is used when the output of both dosers are tighten together and primary sensor or button is used to trigger both doser. The secondary doser can have its own trigger if **Seperate** mode is selected. The **Auto(%)** is used for automatic mode to calculate output of secondary. If **beer vol** is selected in **Priming** setting, beer volume input is used to calculate the output of secondary doser. If **Sugar** is selected, sugar amount is used to calculate. The unit is %, so 1 means 1%. eg. 3.3g or ml for 330ml beer volume, or 0.03g for 3g sugar amount. If the value is set to 0(zero), then there is no relation with primary doser. You will/can input the amount of secondary doser manually.
+Bottles | Bottle size definitions. Maximum 10 types of bottles can be defined. 0 is ignored.
 
 ### Consideration of Peristaltic pump
 
@@ -65,12 +66,15 @@ Button is simple to use. Press the button to dose. In manual mode, press to star
 Sensor works differently. A small value of delay is necessary because usually the sensor senses before the bottle is really in place. Non-zero Cool Time is good for preventing mis-triggering. In Manual mode, to stop running, move the bottle/container out of the sensor. In automatic mode, running is stop if the snesor detects the container is out of place. 
 
 ### Secondary Doser
-Secondary doser might be helpful to dose tinctured spice.
-In manual mode, secondary doser runs independantly. While in Auto mode, the dosage of secondary doser might be linked to primary or not. If it is not linked, i.e. the "Auto(%)" value is 0(zero), then **Long Press** the rotary encoder to switch input to secondary dosage. **Long press** again to back to normal primary dosage input.
+Secondary doser might be helpful to dose tinctured spice or yeast for priming.
+Secondary doser can be set as "Disabled", "Synchorn(ized)", or "Seperated".
+In Synchronized mode, the same triggering button or sensor as primary doser is used to trigger secondary doser. It is used when the output of both dosers are put at the same place.
+The dosage of secondary doser might be linked to primary or not. If it is not linked, i.e. the "Auto(%)" value is 0(zero), then **Long Press** the rotary encoder to switch input to secondary dosage. **Long press** again to back to normal primary dosage input.
+In "Seperated" mode, the secondary doser use secondary button or sensor.
 
 # Tips
 - Run manual mode to suck liquid to tube before running or calibration.
-- Different solutions have different viscosity and different flow speed. Don't calibrate only with water. In my experience, sugar solution of 70Brix is like 1/4 rate of water, while 50Brix is almost equal to water. 
+- Different solutions have different viscosity and different flow speed. Don't calibrate only with water. In my experience, sugar solution of 70Brix is like 1/4 rate of water, while 50Brix is almost equal to water. I usualy use 50% solution.
 - QT30CM has different types. You should choose NPN Normal Open one, which outputs **LOW** when blocked.
 
 # Note
