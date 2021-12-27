@@ -7,7 +7,7 @@
 #include <LiquidCrystal_I2C.h>
 
 
-//#define DEBUG_OUT false
+//#define DEBUG_OUT true
 
 #if DEBUG_OUT
 #define DBGPrint(...) Serial.print(__VA_ARGS__)
@@ -69,6 +69,7 @@ typedef enum _SugarAppId{
     SugarAppSoundSetting,
     SugarAppUnitSetting,
     SugarAppPriming,
+    SugarAppBottleVolume,
     SugarAppSecondarySetting
 } SugarAppId;
 
@@ -394,7 +395,7 @@ typedef struct _DosingControlleretting{
     uint8_t beepButton;
     uint8_t beepDoseStart;
     uint8_t beepDoseEnd;
-}DosingControllerSetting;
+}DosingControllerSetting; // 14/16
 
 struct _Settings{
     uint32_t footPrint;
@@ -488,8 +489,78 @@ SettingManagerClass SettingManager;
 #define WriteSettingAddress(a,v) SettingManager.setValueAt(a,v)
 
 #define AddressOfSetting(a) offsetof(_Settings,a)
+#define MaxVolume 5500
+#define MinVolume 0
 
 
+#define BottleVolumeBase 100
+#define NumberOfBottles 10
+
+class BottleListClass{
+private:
+    uint8_t _idx;
+public:
+    BottleListClass(){
+        _idx=0;
+    }
+    ~BottleListClass(){}
+
+
+    int getBottle(uint8_t idx){
+        int16_t value;
+        EEPROM.get(BottleVolumeBase + idx*2, value);
+        if(value > MaxVolume || value<MinVolume) value=0;
+        return value;
+    }
+
+    void setBottle(uint8_t idx, int volume){
+        EEPROM.put(BottleVolumeBase + idx*2, (int16_t) volume);
+    }
+
+    int currentBottle(){
+        return getBottle(_idx);
+    }
+    
+    int next(){
+        int vol;
+        int idx = _idx;
+        do{
+            idx ++;
+            if(idx == NumberOfBottles) idx=0;
+            if(idx == _idx){
+                return currentBottle();
+            }
+            vol=getBottle(idx);
+        }while(vol ==0);
+        _idx = idx;
+        return vol;
+    }
+
+    int previous(){
+        int vol;
+        int idx = _idx;
+        DBGPrint("previous:");
+        DBGPrintln(idx);
+        do{
+            if(idx == 0) idx=NumberOfBottles-1;
+            else idx --;
+            DBGPrint("idx:");
+            DBGPrint(idx);
+
+            if(idx == _idx){
+                // avoid inifinate loop if NONE set
+                return currentBottle();
+            }
+            vol=getBottle(idx);
+            DBGPrint(" vol:");
+            DBGPrintln(vol);
+
+        }while(vol ==0);
+        _idx = idx;
+        return vol;
+    }
+};
+BottleListClass BottleList;
 /*********************************************************************************/
 //  Buzzer
 
@@ -911,6 +982,7 @@ const char strUnitSetting[] PROGMEM ="Unit";
 const char strFunction[] PROGMEM ="Function";
 const char strAutoDoseSettings[] PROGMEM="Priming";
 const char str2ndDoser[] PROGMEM="2nd Doser";
+const char strBottles[] PROGMEM="Bottles";
 
 struct MenuList;
 
@@ -939,6 +1011,7 @@ const MenuItem SettingMenuItems[]={
     {strSoundSetting, false, {.mode=SugarAppSoundSetting}},
     {strCalibration, false,{ .mode=SugarAppCalibration }},
     {strShotCalibration,false,{ .mode=SugarAppDoseCalibration}},
+    {strBottles,false,{ .mode=SugarAppBottleVolume}},
     {strBack, true, { .subMenu= &MainMenu }}
 };
 
@@ -1099,7 +1172,7 @@ public:
         _useSecondary = ReadSetting(enableSecondaryDoser);
 
         if(_inputBeer){
-            if(_beerVolume < MinimumBeerVolume ||_beerVolume > MaximumBeerVolume) _beerVolume = DefaultBeerVolume;
+            _beerVolume = BottleList.currentBottle();
         }else{
             if(_amount < MinimumDoseAmount || _amount > MinimumDoseAmount) _amount = 5;
         }
@@ -1150,8 +1223,9 @@ public:
             _updateDosage2();
 
         }else if(_inputBeer){
-            if( (_beerVolume +10) < MaximumBeerVolume){
-                _beerVolume +=10;
+            int vol = BottleList.next();
+            if( _beerVolume != vol){
+                _beerVolume =vol;
 
                 _updateBeerVolume();
                 _calPrimingSugar();
@@ -1185,8 +1259,9 @@ public:
             _updateDosage2();
 
         }else if(_inputBeer){
-            if( (_beerVolume -10) > MinimumBeerVolume){
-                _beerVolume -=10;
+            int vol = BottleList.previous();
+            if( _beerVolume != vol){
+                _beerVolume =vol;
 
                 _updateBeerVolume();
                 _calPrimingSugar();
@@ -1260,7 +1335,7 @@ protected:
     float _totalAmount;
     uint16_t _count;
     uint16_t _count2;
-    uint16_t _beerVolume;
+    int16_t _beerVolume;
     bool _inputBeer;
     bool _useSecondary;
     float _dosage2;
@@ -2327,6 +2402,107 @@ protected:
     }
 };
 
+//***********************************************************************
+// Bottles Setting
+
+
+const char strBottleSetting[] PROGMEM="Bottles";
+
+class BottleSetting:public SugarBaby{
+protected:
+    bool _editing;
+    bool _dirty;
+    uint8_t _idx;
+    int _currentValue;
+    //0123456789012345
+    //#10      2000 ml
+
+    void _showItem(){
+        lcdClearLine(1);
+        if(_idx == NumberOfBottles){
+            lcdPrint_P(12,1,strBack,true);
+            return;
+        }
+        
+        lcdPrintAt(0,1,_idx,2);
+        lcdWrite(':');
+        lcdPrint_P(14,1,strMl);
+
+        _currentValue = BottleList.getBottle(_idx);
+        
+        if(_currentValue > MaxVolume || _currentValue< MinVolume) _currentValue =0;
+
+        _printValue();
+    }
+    void _printValue(){
+        EditingText.setNumber(9,1,_currentValue,4);
+        EditingText.show();
+    }
+public:
+    BottleSetting(){}
+    ~BottleSetting(){}
+
+
+    void show(){
+        _idx=0;
+        _editing = false;
+        _dirty = false;
+        lcdPrint_P(1,0,strBottleSetting,true);
+        _showItem();
+    }
+    
+    void rotateForward(){
+        if(_editing){
+            
+            if( (_currentValue + 5) < MaxVolume){
+                _currentValue +=5;
+                _dirty =true;
+                _printValue();
+            }
+
+        }else{
+            if(_idx >0){
+                _idx --;
+                _showItem();
+            }
+        }
+    }
+
+    void rotateBackward(){
+        if(_editing){
+            if( (_currentValue -5)> MinVolume){
+                _currentValue -= 5;
+                _dirty =true;
+                _printValue();
+            }
+        }else{
+            if(_idx < NumberOfBottles){
+                _idx ++;
+                _showItem();
+            }
+        }
+    }
+
+    bool switchPushed(){
+        if(_editing){
+            _editing=false;
+            EditingText.noblink();
+            if(_dirty){
+                BottleList.setBottle(_idx,_currentValue);
+            }
+        }else{
+            if(_idx < NumberOfBottles){
+                _editing=true;
+                EditingText.blink();
+            }else{
+                return true;
+            }
+        }
+        return false;
+    }
+
+
+};
 /*************************************************************************/
 // Carbonation Settings
 /*************************************************************************/
@@ -2797,6 +2973,10 @@ public:
                 break;
             case SugarAppSecondarySetting:
                 _running= & _secondarySetting;
+
+            case SugarAppBottleVolume:
+                _running= & _bottleSetting;
+
         }
         dosingController.setMode(DosingModeDisabled);
         dosingController2.setMode(DosingModeDisabled);
@@ -2817,4 +2997,5 @@ protected:
     UnitSetting _unitSetting;
     PrimingSetting _priming;
     SecondarySetting _secondarySetting;
+    BottleSetting _bottleSetting;
 };
