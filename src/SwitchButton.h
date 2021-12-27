@@ -70,6 +70,10 @@ public:
         return false;
     }
 
+    bool statusChangedFrom(bool oldState){
+        statusChanged();
+        return oldState != _logicalPressed;
+    }
     void isrHandler(){
         _pressed = digitalRead(_pin) == LOW;
         _changedTime= millis();

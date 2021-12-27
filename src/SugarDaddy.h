@@ -7,7 +7,7 @@
 #include <LiquidCrystal_I2C.h>
 
 
-//#define DEBUG_OUT true
+#define DEBUG_OUT true
 
 #if DEBUG_OUT
 #define DBGPrint(...) Serial.print(__VA_ARGS__)
@@ -26,7 +26,7 @@
 #define DoseAdjustUnit 0.05
 #define MaximumAmount 99.0
 #define MinimumAmount 0.5
-#define MinimumDoseAmount 0.1
+#define MinimumDoseAmount 0.0
 
 #define MaximumCalibrationCount 100
 
@@ -397,6 +397,11 @@ typedef struct _DosingControlleretting{
     uint8_t beepDoseEnd;
 }DosingControllerSetting; // 14/16
 
+#define SecondaryDoserDisabled 0
+#define SecondaryDoserSync 1
+#define SecondaryDoserIndependent 2
+
+
 struct _Settings{
     uint32_t footPrint;
 
@@ -407,7 +412,7 @@ struct _Settings{
     int8_t   beerTemperature;
     uint8_t  carbonation; // in volume * 10
     // Dosing machine
-    uint8_t  enableSecondaryDoser;
+    uint8_t  secondaryDoserSet;
     float    secondaryDosageRatio;
     DosingControllerSetting doser[2];
 } Settings;
@@ -436,7 +441,7 @@ public:
             Settings.doser[1].triggerType =0;
             Settings.doser[1].delayTime =0;
             Settings.doser[1].coolTime = 2;
-            Settings.enableSecondaryDoser =0;
+            Settings.secondaryDoserSet =SecondaryDoserDisabled;
             EEPROM.put(0,Settings);
             DBGPrintln("uninitialized data.");
             return false;
@@ -719,7 +724,7 @@ DSCoolTime
 
 class DosingController{
 public:
-    DosingController(uint8_t id):_id(id),_dosing(false){}
+    DosingController(uint8_t id):_id(id),_buttonPressed(false),_dosing(false){}
     ~DosingController(){}
 
     void setDosage(float dosage){
@@ -744,25 +749,37 @@ public:
         _doser.begin(pin, _setting->stepPerMl,_setting->shotAdjustment);
     }
     
+    void setButton(SwitchButton& switchButton){
+        _switchButton = & switchButton;
+    }
+
+    void setParameter(DosingControllerSetting *doseSetting){
+        _dosingDelay = doseSetting->delayTime * 500;
+        _coolTime = doseSetting->coolTime * 500;
+        _isPositionSensor = doseSetting->triggerType !=0;
+        _beepButton = doseSetting->beepButton;
+        _beepDoseStart = doseSetting->beepDoseStart;
+        _beepDoseEnd = doseSetting->beepDoseEnd;
+    }
+
     void loadSetting(){
         _setting = & Settings.doser[_id];
-
-        _dosingDelay = _setting->delayTime * 500;
-        _coolTime = _setting->coolTime * 500;
-        _isPositionSensor = _setting->triggerType !=0;
+        setParameter(_setting);
     }
 
     // most be call every loop
     bool isDosingStateChanged(){
         bool ret=false;
         if(_isPositionSensor){
-            if(_switchButton->statusChanged()){
-                _handleSensorState(_switchButton->pressed());
+            if(_switchButton->statusChangedFrom(_buttonPressed)){
+                _buttonPressed=_switchButton->pressed();
+                _handleSensorState(_buttonPressed);
             }
         }else{
             if(_mode != DosingModeDisabled){
-                if(_switchButton->statusChanged()){
-                     _handleButtonAction(_switchButton->pressed());
+                if(_switchButton->statusChangedFrom(_buttonPressed)){
+                    _buttonPressed=_switchButton->pressed();
+                    _handleButtonAction(_buttonPressed);
                 }
             }
         }
@@ -771,9 +788,9 @@ public:
             _dosing = _doser.running();
             _processStateForDropingStateChange(_dosing);
             if(_dosing){
-                if(_setting->beepDoseStart) Buzzer.buzz(BeepDoseStart);
+                if(_beepDoseStart) Buzzer.buzz(BeepDoseStart);
             }else{
-                if(_setting->beepDoseEnd)  Buzzer.buzz(BeepDoseEnd);
+                if(_beepDoseEnd)  Buzzer.buzz(BeepDoseEnd);
             }
             ret =true;
         }
@@ -826,7 +843,7 @@ protected:
     uint8_t    _id;
     DosingControllerSetting *_setting;
     SwitchButton* _switchButton;
-    
+    bool  _buttonPressed;
     bool _dosing;
     float _dosage;
     DosingMode _mode;
@@ -838,13 +855,16 @@ protected:
 
     uint32_t   _timeToAction;
     uint32_t   _calStarSteps;
+    bool _beepDoseStart;
+    bool _beepDoseEnd;
+    bool _beepButton;
 
     void _handleSensorState(bool inPosition){
         _inPosition = inPosition;
         if(inPosition){
             if(_mode == DosingModeSingleShot || _mode == DosingModeManual){
                 if(_state==DSIdle){
-                   if(_setting->beepButton) Buzzer.buzz(BeepButton);
+                   if(_beepButton) Buzzer.buzz(BeepButton);
                     lcdDosingSymbol(RevDrosingSymbolChar,_id);
                     _timeToAction = millis() + _dosingDelay;
                     _state = DSPrepareToDose;
@@ -875,7 +895,7 @@ protected:
 
         if(_state==DSIdle){
             if(_mode == DosingModeSingleShot || _mode == DosingModeManual){
-                if(_setting->beepButton) Buzzer.buzz(BeepButton);
+                if(_beepButton) Buzzer.buzz(BeepButton);
                 lcdDosingSymbol(RevDrosingSymbolChar,_id);
 
                 _timeToAction = millis() + _dosingDelay;
@@ -883,7 +903,7 @@ protected:
             }
         }else if(_state==DSDosing){
             if(_mode == DosingModeManual){
-               if(_setting->beepButton) Buzzer.buzz(BeepButton);
+               if(_beepButton) Buzzer.buzz(BeepButton);
                 // stop
                 _doser.stop();
                 // state change will be process when
@@ -1098,6 +1118,33 @@ protected:
 
 
 /*********************************************************************************/
+// Synchronized two doser
+/*
+  One other solution is to use one "controller" that reads buttons and control
+  both doser. However, that would duplicate or complicate things when seperated control
+  is needed.
+*/
+void loadDosingControlParameter(){
+    if(ReadSetting(secondaryDoserSet) == SecondaryDoserIndependent){
+        dosingController.setParameter(& Settings.doser[0]);
+        dosingController2.setParameter(& Settings.doser[1]);
+    }else if(ReadSetting(secondaryDoserSet) == SecondaryDoserSync){
+        // using doser1 setting, but need to adjust end "beep"
+        DosingControllerSetting set1,set2;
+        set1 = Settings.doser[0];
+        set2 = Settings.doser[0];
+        // let controller1 "beep" when ncecessary
+        set2.beepButton = false;
+        set2.beepDoseStart = false;
+        set2.beepDoseEnd = false;
+        dosingController.setParameter(& set1);
+        dosingController2.setParameter(& set2);
+    }else{
+        dosingController.setParameter(& Settings.doser[0]);
+    }
+}
+
+/*********************************************************************************/
 // Automatic dosing
 /*
 0123456789012345
@@ -1169,7 +1216,7 @@ public:
     void show(){
          _changeSecondary=false;
         _inputBeer = ReadSetting(inputBeer);
-        _useSecondary = ReadSetting(enableSecondaryDoser);
+        _useSecondary = ReadSetting(secondaryDoserSet) != SecondaryDoserDisabled;
 
         if(_inputBeer){
             _beerVolume = BottleList.currentBottle();
@@ -1211,9 +1258,13 @@ public:
         _updateDosage();
         _updateCount();
         _updateTotal();
-
+        
+        loadDosingControlParameter();
         dosingController.setMode(DosingModeSingleShot);
-        if(_useSecondary) dosingController2.setMode(DosingModeSingleShot);
+        if(_useSecondary){
+            dosingController2.setButton( (ReadSetting(secondaryDoserSet) == SecondaryDoserSync)? switchButton1:switchButton2);
+            dosingController2.setMode(DosingModeSingleShot);
+        }
     }
 
     void rotateForward(){
@@ -1253,10 +1304,11 @@ public:
     }
     
     void rotateBackward(){
-        if(_changeSecondary){
-            _dosage2 -= DoseAdjustUnit;
-            if(_dosage2 <MinimumDoseAmount) _dosage2 = MinimumDoseAmount;
-            _updateDosage2();
+        if(_changeSecondary){            
+            if( (_dosage2 -DoseAdjustUnit)  >= MinimumDoseAmount){
+                _dosage2 -= DoseAdjustUnit;
+                _updateDosage2();
+            }
 
         }else if(_inputBeer){
             int vol = BottleList.previous();
@@ -1432,8 +1484,10 @@ public:
     ~ManualDoser(){}
 
     void show(){
-        if(ReadSetting(enableSecondaryDoser)){
+        loadDosingControlParameter();
+        if(ReadSetting(secondaryDoserSet) != SecondaryDoserDisabled){
             _primaryRow =0;
+            dosingController2.setButton((ReadSetting(secondaryDoserSet) == SecondaryDoserSync)? switchButton1:switchButton2);
 
             dosingController2.setMode(DosingModeManual);
             _doserRunning[1] = false;
@@ -1460,7 +1514,7 @@ public:
 
     void loop(){
         _updateRunningInfo(0);
-        if(ReadSetting(enableSecondaryDoser)){
+        if(ReadSetting(secondaryDoserSet) != SecondaryDoserDisabled){
             _updateRunningInfo(1);
         }
     }
@@ -1561,7 +1615,7 @@ public:
         lcdPrint_P(TitleCol,TitleRow,strCalibration,true);
 
         _doserId = 0;
-        if(ReadSetting(enableSecondaryDoser)){
+        if(ReadSetting(secondaryDoserSet) != SecondaryDoserDisabled){
             lcdPrint_P(1,1,strDoser);
             _displayDoserSelection();
             _mode =Cal_SelectDoser;
@@ -1766,7 +1820,7 @@ public:
         
         
         _doserId = 0;
-        if(ReadSetting(enableSecondaryDoser)){
+        if(ReadSetting(secondaryDoserSet) != SecondaryDoserDisabled){
             _state = CS_SelectDoser;
             lcdPrint_P(1,1,strDoser);
             _displayDoserSelection();
@@ -2047,8 +2101,7 @@ public:
             } 
         }else{
             // non editing
-            if(ReadSetting(enableSecondaryDoser) && 
-               _doserId == 1 && _state == TS_TrigerType){
+            if(ReadSetting(secondaryDoserSet) == SecondaryDoserIndependent &&  _doserId == 1 && _state == TS_TrigerType){
                 _doserId =0;
                 _state = TS_CoolTime;
                 _displayItems();
@@ -2077,8 +2130,7 @@ public:
             
         }else{
             // non editing
-            if( ReadSetting(enableSecondaryDoser) && 
-            _doserId ==0 && _state==TS_CoolTime){
+            if( ReadSetting(secondaryDoserSet) == SecondaryDoserIndependent && _doserId ==0 && _state==TS_CoolTime){
                 _doserId =1;
                 _state =TS_TrigerType;
                 _displayItems();
@@ -2107,7 +2159,7 @@ public:
         }else{
             if(_state == TS_Back){
                 SettingManager.save();
-                dosingController.loadSetting();
+                //dosingController.loadSetting();
                 return true;
             }else{
                 _editing=true;
@@ -2127,7 +2179,7 @@ protected:
     void _displayItems(){
         if(_state == TS_TrigerType){
             lcdPrint_P(1,0,strDosing);
-            if(ReadSetting(enableSecondaryDoser))
+            if(ReadSetting(secondaryDoserSet) == SecondaryDoserIndependent)
                 lcdPrint_P(7,0,(_doserId ==0)? strPrimary:strSecondary,true);
             lcdPrint_P(2,1,strControl,true);
             _trigger = DoserSetting(_doserId,triggerType);
@@ -2141,7 +2193,7 @@ protected:
             if(_timeval > MaximumDelayTime) _timeval = MaximumDelayTime;
             _displayTime(_timeval); 
         }else if(_state == TS_CoolTime){
-            if(ReadSetting(enableSecondaryDoser)) lcdPrint_P(7,0,(_doserId ==0)? strPrimary:strSecondary,true);
+            if(ReadSetting(secondaryDoserSet) == SecondaryDoserIndependent) lcdPrint_P(7,0,(_doserId ==0)? strPrimary:strSecondary,true);
             lcdPrint_P(2,1,strCoolTime,true);
             lcd->setCursor(1,15);
             lcd->write('s');
@@ -2222,8 +2274,7 @@ public:
                 _displayOnOff();
             }
         }else{
-            if(ReadSetting(enableSecondaryDoser)
-                    && _doserId ==1 && _state == SSS_Button){
+            if(ReadSetting(secondaryDoserSet) == SecondaryDoserIndependent && _doserId ==1 && _state == SSS_Button){
                 _doserId =0;
                 _state = SSS_DoseEnd;
                 _displayItem();
@@ -2243,8 +2294,7 @@ public:
                 _displayOnOff();
             }
         }else{
-            if(ReadSetting(enableSecondaryDoser) &&
-                _doserId ==0 && _state == SSS_DoseEnd){
+            if(ReadSetting(secondaryDoserSet) == SecondaryDoserIndependent&& _doserId ==0 && _state == SSS_DoseEnd){
                 _doserId =1;
                 _state = SSS_Button;
                 _displayItem();
@@ -2288,7 +2338,7 @@ protected:
 
     void _displayItem(){
         if(_state != SSS_Back){
-            if(ReadSetting(enableSecondaryDoser)) lcdPrint_P(7,0,(_doserId==0)? strPrimary:strSecondary,true);
+            if(ReadSetting(secondaryDoserSet) == SecondaryDoserIndependent) lcdPrint_P(7,0,(_doserId==0)? strPrimary:strSecondary,true);
             lcdPrint_P(2,1,SoundSettingLabels[_state],true);
             if(_state == SSS_Button) _on =DoserSetting(_doserId,beepButton) != 0;
             else if(_state == SSS_DoseStart)  _on =DoserSetting(_doserId,beepDoseStart) != 0;
@@ -2699,18 +2749,24 @@ protected:
  SecondaryDoser
 */
 const char strSecondaryDoser[] PROGMEM="SecondaryDoser";
-const char strEnable[] PROGMEM =  "Enable";
-const char strYes[] PROGMEM = "Yes";
-const char strNo[] PROGMEM =  "No ";
+const char strSet[] PROGMEM =  "";
+const char strDisabled[]    PROGMEM = "Disabled";
+const char strSyncronized[] PROGMEM = "Synchron";
+const char strSeperate[] PROGMEM    = "Seperate";
+
+//const char strYes[] PROGMEM = "Yes";
+//const char strNo[] PROGMEM =  "No ";
+
 const char strRatio[] PROGMEM = "Auto(%)";
+const char strTrigger[] PROGMEM =  "Trigger";
 
 
 #define SecondaryIndexEnable 0
 #define SecondaryIndexRatio 1
 #define SecondaryIndexBack 2
 
-#define SecondaryIndexRatioInputInteger 3
-#define SecondaryIndexRatioInputFraction 4
+#define SecondaryIndexRatioInputInteger 4
+#define SecondaryIndexRatioInputFraction 5
 
 
 class SecondarySetting:public SugarBaby{
@@ -2728,9 +2784,9 @@ public:
     void rotateForward(){
         if(_editing){
              if(_setIdx == SecondaryIndexEnable){
-                 if(!_enabled){
-                     _enabled = true;
-                     EditingText.setText_P(13,1,strYes);
+                 if(_2ndDoserSet > 0){
+                     _2ndDoserSet --;
+                     _show2ndDoserSet();
                  }
              }else if(_setIdx ==SecondaryIndexRatioInputInteger){
                  if(_ratioInteger < MaximumDoserRatioInteger){
@@ -2756,11 +2812,11 @@ public:
     void rotateBackward(){
         if(_editing){
              if(_setIdx == SecondaryIndexEnable){
-                 if(_enabled){
-                     _enabled = false;
-                     EditingText.setText_P(13,1,strNo);
-                 }
-             }else if(_setIdx ==SecondaryIndexRatioInputInteger){
+                 if( (_2ndDoserSet +1) <= SecondaryDoserIndependent){
+                     _2ndDoserSet ++;
+                     _show2ndDoserSet();
+                 }            
+            }else if(_setIdx ==SecondaryIndexRatioInputInteger){
                  if(_ratioInteger > 0){
                      _ratioInteger --;
                      _updateIntegerPart();
@@ -2784,14 +2840,9 @@ public:
         if(_editing){
             if(_setIdx == SecondaryIndexEnable){
                 EditingText.noblink();
-                DBGPrint(F("_enabled:"));
-                DBGPrint(_enabled);
-
-                WriteSetting(enableSecondaryDoser,_enabled);
-                DBGPrint(F("enableSecondaryDoser:"));
-                DBGPrintln(Settings.enableSecondaryDoser);
-
+                WriteSetting(secondaryDoserSet,_2ndDoserSet);
                 _editing=false;
+                dosingController2.setButton((ReadSetting(secondaryDoserSet) == SecondaryDoserSync)? switchButton1:switchButton2);
             }else if(_setIdx ==SecondaryIndexRatioInputInteger){
                 EditingText.noblink();
                 _updateFractionPart();
@@ -2836,26 +2887,28 @@ public:
     }
 
 protected:
-    bool _enabled;
+    uint8_t _2ndDoserSet;
     uint8_t _setIdx;
     bool _editing;
     float _ratio;
     int   _ratioInteger;
     int   _ratioFraction;
 
+    void _show2ndDoserSet(){
+        if(_2ndDoserSet == SecondaryDoserDisabled) EditingText.setText_P(8,1,strDisabled);
+        else if(_2ndDoserSet == SecondaryDoserSync) EditingText.setText_P(8,1,strSyncronized);
+        else EditingText.setText_P(8,1,strSeperate);
+
+        EditingText.show();
+    }
+
     void _showItems(){
         if(_setIdx == SecondaryIndexEnable){
-            lcdPrint_P(2,1,strEnable,true);
+            lcdPrint_P(2,1,strSet,true);
             
-            _enabled = ReadSetting(enableSecondaryDoser);
-            DBGPrint(F("enableSecondaryDoser:"));
-            DBGPrint(Settings.enableSecondaryDoser);
-            DBGPrint(F("_enabled:"));
-            DBGPrintln(_enabled);
-
-            EditingText.setText_P(13,1,_enabled? strYes:strNo);
-            EditingText.show();
-        }else if(_setIdx == SecondaryIndexRatio){
+            _2ndDoserSet = ReadSetting(secondaryDoserSet);
+            _show2ndDoserSet();        
+        }else if(_setIdx ==  SecondaryIndexRatio){
             lcdPrint_P(2,1,strRatio,true);
             
             _ratio = ReadSetting(secondaryDosageRatio) * 100.0;
@@ -2892,8 +2945,13 @@ public:
         switchButton2.begin(BUTTON2_PIN);
 
         dosingController.begin(switchButton1,PUMP_PIN);
-        dosingController2.begin(switchButton2,PUMP2_PIN);
-        
+        if(ReadSetting(secondaryDoserSet) == SecondaryDoserSync){
+            dosingController2.begin(switchButton1,PUMP2_PIN);
+            dosingController2.setParameter(& Settings.doser[0]);
+
+        }else{
+            dosingController2.begin(switchButton2,PUMP2_PIN);
+        }
         _running = &_menuHandler;
    
         _running->show();
@@ -2973,7 +3031,7 @@ public:
                 break;
             case SugarAppSecondarySetting:
                 _running= & _secondarySetting;
-
+                break;
             case SugarAppBottleVolume:
                 _running= & _bottleSetting;
 
