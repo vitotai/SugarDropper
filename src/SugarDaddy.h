@@ -7,7 +7,7 @@
 #include <LiquidCrystal_I2C.h>
 
 
-#define DEBUG_OUT true
+//#define DEBUG_OUT true
 
 #if DEBUG_OUT
 #define DBGPrint(...) Serial.print(__VA_ARGS__)
@@ -855,7 +855,7 @@ protected:
     uint32_t   _dosingDelay;
     uint32_t   _coolTime;
 
-    uint32_t   _timeToAction;
+    uint32_t   _waitToAction;
     uint32_t   _calStarSteps;
     bool _beepDoseStart;
     bool _beepDoseEnd;
@@ -868,7 +868,7 @@ protected:
                 if(_state==DSIdle){
                    if(_beepButton) Buzzer.buzz(BeepButton);
                     lcdDosingSymbol(RevDrosingSymbolChar,_id);
-                    _timeToAction = millis() + _dosingDelay;
+                    _waitToAction = millis();
                     _state = DSPrepareToDose;
                 }
             }
@@ -901,7 +901,7 @@ protected:
                     if(_beepButton) Buzzer.buzz(BeepButton);
                     lcdDosingSymbol(RevDrosingSymbolChar,_id);
 
-                    _timeToAction = millis() + _dosingDelay;
+                    _waitToAction = millis(); 
                     _state = DSPrepareToDose;
                 }
             }
@@ -918,7 +918,7 @@ protected:
     void _enterWaitCoolingState(){
         lcdDosingSymbol(WaitSymbol,_id);
         _state = DSCoolTime;
-        _timeToAction = millis() + _coolTime;
+        _waitToAction = millis(); // + _coolTime;
     }
     void _enterDosedState(){
         lcdDosingSymbol(DosedSymbol,_id);
@@ -947,7 +947,7 @@ protected:
     void _processStateForTime(){
         uint32_t present = millis();
         if(_state == DSPrepareToDose){
-            if(present >= _timeToAction){
+            if( (present - _waitToAction) >=  _dosingDelay){
                 if(_dosage >0){
                     if(_mode == DosingModeSingleShot){
                         lcdDosingSymbol(DrosingSymbolChar,_id);
@@ -960,7 +960,7 @@ protected:
                 }
             }
         }else if(_state == DSCoolTime){
-            if(present >= _timeToAction){
+            if( (present - _waitToAction) >= _coolTime){
                 _state = DSIdle;
                 lcdDosingSymbol(DosingSymbolNone,_id);
             }
