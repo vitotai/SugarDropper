@@ -45,6 +45,10 @@
 
 #define BUZZ_PIN 12
 
+#define DOSED_INDICATOR_PIN A1
+#define DOSED_INDICATOR2_PIN A2
+#define INVALID_PIN 0xFF
+
 #define MinimumGapBetweenDrop 1000
 #define CalibrationDropDelay 3000
 
@@ -665,7 +669,12 @@ public:
         DBGPrint(F("ml as steps:"));
         DBGPrintln(steps);
     }
-
+    
+    uint32_t dosingDuration(float amount){
+        float adjustedValue =amount + _shotAdjustment;
+        return (uint32_t)(adjustedValue * _stepPerMl);
+    }
+    
     void run(){
         _startDosingPos=_stepper.run();
         DBGPrintln(F("\t flow start"));
@@ -697,7 +706,7 @@ public:
 //        DBGPrintln(steps - _startDosingPos);
         return (float)(steps - _startDosingPos) / _stepPerMl;
     }
-
+    
 protected:
     Stepper _stepper;
     float _stepPerMl;
@@ -742,11 +751,16 @@ public:
         }
     }
     
-    void begin(SwitchButton& switchButton,byte pin){
+    void begin(SwitchButton& switchButton,byte pin, byte dosedIndicatorPin=INVALID_PIN){
         loadSetting();
         _mode = DosingModeDisabled;
         _switchButton = & switchButton;
         _doser.begin(pin, _setting->stepPerMl,_setting->shotAdjustment);
+        _dosedIndPin = dosedIndicatorPin;
+        if(_dosedIndPin != INVALID_PIN){
+            pinMode(_dosedIndPin,OUTPUT);
+            digitalWrite(_dosedIndPin,LOW);
+        }
     }
     
     void setButton(SwitchButton& switchButton){
@@ -840,6 +854,11 @@ public:
     inline float getDosingVolume(){
         return _doser.getDosingVolume();
     }
+
+    inline uint32_t estDosingTime(){
+        return _doser.dosingDuration(_dosage);
+    }
+
 protected:
     SugarDoser _doser;
     uint8_t    _id;
@@ -860,6 +879,7 @@ protected:
     bool _beepDoseStart;
     bool _beepDoseEnd;
     bool _beepButton;
+    byte _dosedIndPin;
 
     void _handleSensorState(bool inPosition){
         _inPosition = inPosition;
@@ -923,6 +943,9 @@ protected:
     void _enterDosedState(){
         lcdDosingSymbol(DosedSymbol,_id);
         _state = DSDosed;
+        if(_dosedIndPin != INVALID_PIN){
+            digitalWrite(_dosedIndPin,HIGH);
+        }
     }
 
     void _processStateForDropingStateChange(bool dosing){
@@ -963,6 +986,9 @@ protected:
             if( (present - _waitToAction) >= _coolTime){
                 _state = DSIdle;
                 lcdDosingSymbol(DosingSymbolNone,_id);
+                if(_dosedIndPin != INVALID_PIN){
+                    digitalWrite(_dosedIndPin,LOW);
+                }
             }
         }
     }
@@ -2950,13 +2976,13 @@ public:
         switchButton1.begin(BUTTON_PIN);
         switchButton2.begin(BUTTON2_PIN);
 
-        dosingController.begin(switchButton1,PUMP_PIN);
+        dosingController.begin(switchButton1,PUMP_PIN,DOSED_INDICATOR_PIN);
         if(ReadSetting(secondaryDoserSet) == SecondaryDoserSync){
-            dosingController2.begin(switchButton1,PUMP2_PIN);
+            dosingController2.begin(switchButton1,PUMP2_PIN,DOSED_INDICATOR2_PIN);
             dosingController2.setParameter(& Settings.doser[0]);
 
         }else{
-            dosingController2.begin(switchButton2,PUMP2_PIN);
+            dosingController2.begin(switchButton2,PUMP2_PIN,DOSED_INDICATOR2_PIN);
         }
         _running = &_menuHandler;
    

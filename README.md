@@ -25,6 +25,8 @@ D9   | CLK of K040 |
 D10  | DT of K040 |
 D11  | SW of K040 |
 D12  | Buzzer |
+A1   | Indicator of primary doser |
+A2   | Indicator of secondary doser |
 A4   | SDA of LCD |
 A5   | SCL of LCD |
 
@@ -64,6 +66,10 @@ The is the rough requirement of peristaltic pumps.
 ### Control
 Button is simple to use. Press the button to dose. In manual mode, press to start, and press again to stop. "Delay" is usually zero and "cool time" can be zero, too.
 Sensor works differently. A small value of delay is necessary because usually the sensor senses before the bottle is really in place. Non-zero Cool Time is good for preventing mis-triggering. In Manual mode, to stop running, move the bottle/container out of the sensor. In automatic mode, running is stop if the snesor detects the container is out of place. 
+
+
+### Indicator Pins
+Indicator pin will signal high after the doser has dosed right amount and before the bottle is removed. It can be connected to a LED to indicate that dosage has been dosed.
 
 ### Secondary Doser
 Secondary doser might be helpful to dose tinctured spice or yeast for priming.
