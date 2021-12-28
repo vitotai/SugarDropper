@@ -804,9 +804,11 @@ public:
     // for calibration/programming purpose
     void dose(){
         if(! _doser.running()){
-            lcdDosingSymbol(DrosingSymbolChar,_id);
-            _doser.dose(_dosage);
-            _state = DSDosing;
+            if(_dosage >0){
+                lcdDosingSymbol(DrosingSymbolChar,_id);
+                _doser.dose(_dosage);
+                _state = DSDosing;
+            }
         }
     }
 
@@ -895,11 +897,13 @@ protected:
 
         if(_state==DSIdle){
             if(_mode == DosingModeSingleShot || _mode == DosingModeManual){
-                if(_beepButton) Buzzer.buzz(BeepButton);
-                lcdDosingSymbol(RevDrosingSymbolChar,_id);
+                if(_dosage >0){
+                    if(_beepButton) Buzzer.buzz(BeepButton);
+                    lcdDosingSymbol(RevDrosingSymbolChar,_id);
 
-                _timeToAction = millis() + _dosingDelay;
-                _state = DSPrepareToDose;
+                    _timeToAction = millis() + _dosingDelay;
+                    _state = DSPrepareToDose;
+                }
             }
         }else if(_state==DSDosing){
             if(_mode == DosingModeManual){
@@ -944,14 +948,16 @@ protected:
         uint32_t present = millis();
         if(_state == DSPrepareToDose){
             if(present >= _timeToAction){
-                if(_mode == DosingModeSingleShot){
-                    lcdDosingSymbol(DrosingSymbolChar,_id);
-                    _doser.dose(_dosage);
-                }else{
-                    lcdDosingSymbol(DrosingSymbolChar,_id);
-                    _doser.run();
+                if(_dosage >0){
+                    if(_mode == DosingModeSingleShot){
+                        lcdDosingSymbol(DrosingSymbolChar,_id);
+                        _doser.dose(_dosage);
+                    }else{
+                        lcdDosingSymbol(DrosingSymbolChar,_id);
+                        _doser.run();
+                    }
+                    _state = DSDosing;
                 }
-                _state = DSDosing;
             }
         }else if(_state == DSCoolTime){
             if(present >= _timeToAction){
