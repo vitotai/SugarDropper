@@ -419,6 +419,7 @@ struct _Settings{
     uint8_t  secondaryDoserSet;
     float    secondaryDosageRatio;
     DosingControllerSetting doser[2];
+    uint8_t     reverseRotataryDirection;
 } Settings;
 
 #define Set2CV(v) (float)(v)/10.0
@@ -446,6 +447,7 @@ public:
             Settings.doser[1].delayTime =0;
             Settings.doser[1].coolTime = 2;
             Settings.secondaryDoserSet =SecondaryDoserDisabled;
+            Settings.reverseRotataryDirection = false;
             EEPROM.put(0,Settings);
             DBGPrintln("uninitialized data.");
             return false;
@@ -2972,6 +2974,7 @@ public:
         SettingManager.begin();
         Buzzer.begin();
         lcdInitialize();
+        encoder.setReversedDirection(true);
 
         switchButton1.begin(BUTTON_PIN);
         switchButton2.begin(BUTTON2_PIN);

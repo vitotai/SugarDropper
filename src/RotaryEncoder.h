@@ -82,6 +82,7 @@ class RotaryEncoder
     int _encoderPinA;
     int _encoderPinB;
     int _encoderPinP;
+	bool _reversedDir;
 
   public:
 	RotaryEncoder(int pinA,int pinB, int pinSW) 
@@ -102,6 +103,13 @@ class RotaryEncoder
                 _output=2;
                 _skipUp = false;
         _state=R_START;
+		_reversedDir = false;
+	}
+	void setReversedDirection(bool reversed){
+		_reversedDir = reversed;
+	}
+	bool reversedDirection(void){
+		return _reversedDir;
 	}
 
 	RotaryEncoderStatus read(void)
@@ -122,7 +130,11 @@ class RotaryEncoder
 	    uint8_t dir = _state & 0x30;
 
 	    if(dir){
-		    return (dir==DIR_CW)? RotaryEncoderStatusBackward:RotaryEncoderStatusFordward;
+			if(_reversedDir){
+			    return (dir==DIR_CW)? RotaryEncoderStatusFordward:RotaryEncoderStatusBackward;
+			}else{
+			    return (dir==DIR_CW)? RotaryEncoderStatusBackward:RotaryEncoderStatusFordward;
+			}
 	    }
 
         bool pushed=!digitalRead(_encoderPinP);
