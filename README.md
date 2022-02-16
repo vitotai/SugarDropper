@@ -38,6 +38,7 @@ Item   | Description
 ----|:------------------
 Automatic | Automatic mode. The speicifed amount of sugar solution will run out when triggered, button pressed or sensor triggered. Changing the amount by the rotary encoder.
 Manual    | Manually start/stop running.
+Run Doser | Running individual to fill or empty tubes.
 Settings  | see next table
 
 Setting Items   | Description
