@@ -74,7 +74,8 @@ typedef enum _SugarAppId{
     SugarAppUnitSetting,
     SugarAppPriming,
     SugarAppBottleVolume,
-    SugarAppSecondarySetting
+    SugarAppSecondarySetting,
+    SugarAppRunDoser
 } SugarAppId;
 
 
@@ -500,6 +501,11 @@ SettingManagerClass SettingManager;
 #define WriteSettingAddress(a,v) SettingManager.setValueAt(a,v)
 
 #define AddressOfSetting(a) offsetof(_Settings,a)
+
+/************************************************************************************************/
+// Bottle list
+/************************************************************************************************/
+
 #define MaxVolume 5500
 #define MinVolume 0
 
@@ -776,6 +782,10 @@ public:
         _beepButton = doseSetting->beepButton;
         _beepDoseStart = doseSetting->beepDoseStart;
         _beepDoseEnd = doseSetting->beepDoseEnd;
+        DBGPrint(F("set "));
+        DBGPrint(_id);
+        DBGPrint(F(" _dosingDelay "));
+        DBGPrintln(_dosingDelay);
     }
 
     void loadSetting(){
@@ -861,6 +871,14 @@ public:
         return _doser.dosingDuration(_dosage);
     }
 
+    void run(){
+        _doser.run();
+        _dosing=true;
+    }
+    void stop(){
+        _doser.stop();
+        _dosing = false;
+    }
 protected:
     SugarDoser _doser;
     uint8_t    _id;
@@ -925,6 +943,8 @@ protected:
 
                     _waitToAction = millis(); 
                     _state = DSPrepareToDose;
+                    DBGPrint(F("PrepareToDose:"));
+                    DBGPrintln(_waitToAction);
                 }
             }
         }else if(_state==DSDosing){
@@ -973,16 +993,15 @@ protected:
         uint32_t present = millis();
         if(_state == DSPrepareToDose){
             if( (present - _waitToAction) >=  _dosingDelay){
-                if(_dosage >0){
-                    if(_mode == DosingModeSingleShot){
+                    if(_mode == DosingModeSingleShot && _dosage >0){
                         lcdDosingSymbol(DrosingSymbolChar,_id);
                         _doser.dose(_dosage);
+                         _state = DSDosing;
                     }else{
                         lcdDosingSymbol(DrosingSymbolChar,_id);
                         _doser.run();
-                    }
-                    _state = DSDosing;
-                }
+                         _state = DSDosing;
+                    }                   
             }
         }else if(_state == DSCoolTime){
             if( (present - _waitToAction) >= _coolTime){
@@ -1038,6 +1057,8 @@ const char strAutoDoseSettings[] PROGMEM="Priming";
 const char str2ndDoser[] PROGMEM="2nd Doser";
 const char strBottles[] PROGMEM="Bottles";
 
+const char strRunDoser[] PROGMEM="Run Doser";
+
 struct MenuList;
 
 struct MenuItem{
@@ -1078,6 +1099,7 @@ const MenuList SettingMenu={
 const MenuItem mainMenuItems[]  ={
     {strAutomatic,false, {.mode = SugarAppAutomatic}},
     {strManual, false, {.mode =SugarAppManual}},
+    {strRunDoser, false, {.mode =SugarAppRunDoser}},
     {strSetting, true, {.subMenu = &SettingMenu}}
 };
 
@@ -1180,6 +1202,8 @@ void loadDosingControlParameter(){
 
 /*********************************************************************************/
 // Automatic dosing
+/*********************************************************************************/
+
 /*
 0123456789012345
 Automatic   999x 
@@ -1503,6 +1527,7 @@ X099/999 1330mlX
 
 /*********************************************************************************/
 // manual dosing
+/*********************************************************************************/
 
 /*
 0123456789012345
@@ -1607,6 +1632,132 @@ protected:
 };
 
 
+
+/*********************************************************************************/
+// Run dosing
+/*********************************************************************************/
+
+/*
+
+0123456789012345
+ Run Primary
+     Secondary
+ Run/Stop/Exit
+*/
+
+const char strExit[] PROGMEM="Exit";
+const char strRun[] PROGMEM="Run";
+const char strStop[] PROGMEM="Stop";
+const char strPrimary[] PROGMEM =   "Primary";
+const char strSecondary[] PROGMEM = "Secondary";
+const char strDoser[] PROGMEM = "Run";
+
+class RunDoser:public SugarBaby{
+public:
+    RunDoser(){}
+    ~RunDoser(){}
+
+    void show(){
+
+
+        _doserId = 0;
+        lcdPrint_P(1,0,strDoser);
+
+        if(ReadSetting(secondaryDoserSet) != SecondaryDoserDisabled){
+            _displayDoserSelection();
+            _doserChosen = false;
+        }else{
+            _doserChosen = true;
+        }
+
+    }
+
+    void loop(){
+    }
+
+    void rotateForward(){
+        if(! _doserChosen){
+            if(_doserId ==1 ){
+                _doserId = 0;
+                _displayDoserSelection();
+            }
+        }else{
+            if(_controller->isDosing()) return;
+            // only handle when not running.
+            if(_exit){ 
+                _exit= false;
+                _printAction();
+            }
+        }
+    }
+    
+    void rotateBackward(){
+        if(! _doserChosen){
+            if(_doserId ==0 ){
+                _doserId = 1;
+                _displayDoserSelection();
+            }
+        }else{
+            if(_controller->isDosing()) return;
+            // only handle when not running.
+            if(!_exit){ 
+                _exit= true;
+                _printAction();
+            }
+        }
+    }
+    
+    bool switchPushed(){
+        if(! _doserChosen){
+            _controller = _doserId? &dosingController2:&dosingController;
+            EditingText.noblink();
+            _doserChosen = true;
+            _exit = false;
+            _printAction();
+        }else{
+            if(_exit){
+                EditingText.noblink();
+                return true;
+            }
+            if(_controller->isDosing()){
+                DBGPrint(F("Stop Doser\n"));
+                _controller->stop();
+            }else{
+                DBGPrint(F("Run Dorser\n"));
+                _controller->run();
+            }
+            _printAction();
+        }
+        return false;
+    }
+
+protected:
+    bool _doserChosen;
+    bool _exit;
+    uint8_t _doserId;
+    DosingController *_controller;
+
+    void _displayDoserSelection(){
+        lcdClear(5,0,9);
+        EditingText.setText_P(5,0,_doserId? strSecondary:strPrimary);
+        EditingText.blink();
+    }
+
+    void _printAction(){
+        lcdClear(1,1,4);
+        if(_exit){
+            EditingText.setText_P(1,1,strExit);
+        }else{
+            DBGPrint(F("Is Dosing:"));
+            DBGPrintln(_controller->isDosing());
+            EditingText.setText_P(1,1,_controller->isDosing()? strStop:strRun);
+        }
+         EditingText.blink();
+    }
+};
+
+
+
 /*********************************************************************************/
 // initial calibration/setup
 //  to derive steps/ml
@@ -1626,15 +1777,15 @@ cal by 100.24 ml
 
 const char strCalBy[] PROGMEM="Vol";
 const char strAdjust[] PROGMEM="adjust";
-const char strRunDoser[] PROGMEM="Run Doser";
+//const char strRunDoser[] PROGMEM="Run Doser";
 const char strEnter[] PROGMEM="Continue";
 const char strRate[] PROGMEM="Rate";
 const char strMlPerSec[] PROGMEM="ml/s";
 const char strGramPerSec[] PROGMEM="g/s";
 
-const char strPrimary[] PROGMEM =   "Primary";
-const char strSecondary[] PROGMEM = "Secondary";
-const char strDoser[] PROGMEM = "Doser";
+//const char strPrimary[] PROGMEM =   "Primary";
+//const char strSecondary[] PROGMEM = "Secondary";
+//const char strDoser[] PROGMEM = "Doser";
 
 #define TitleRow 0
 #define TitleCol 1
@@ -1645,6 +1796,7 @@ public:
     ~SugarCalibrator(){}
 
     void show(){
+        loadDosingControlParameter();
         _calVolume = 10;
         lcdPrint_P(TitleCol,TitleRow,strCalibration,true);
 
@@ -1841,7 +1993,7 @@ const char strCalibratedTo[] PROGMEM="Calibrated to";
 
 const char strAmount[] PROGMEM="Amount";
 const char strCount[] PROGMEM="Count";
-const char strRun[] PROGMEM="Go";
+const char strGo[] PROGMEM="Go";
 //const char strAdjust[] PROGMEM="Adjust";
 
 class DoseCalibration:public SugarBaby{
@@ -1850,6 +2002,7 @@ public:
     ~DoseCalibration(){}
 
     void show(){
+        loadDosingControlParameter();
         lcdPrint_P(TitleCol,TitleRow,strCalibration,true);
         
         
@@ -1927,7 +2080,7 @@ public:
             //Run 10.12ml *100
             // the "count" numer shold already be there
             // show extra volume
-            lcdPrint_P(1,1,strRun);
+            lcdPrint_P(1,1,strGo);
             lcdPrintAt(3,1,_amount,6,2);
             if(ReadSetting(useWeight)) lcdWriteAt(9,1,'g');
             else lcdPrint_P(9,1,strMl);
@@ -3069,7 +3222,9 @@ public:
                 break;
             case SugarAppBottleVolume:
                 _running= & _bottleSetting;
-
+                break;
+            case SugarAppRunDoser:
+                _running = & _runDoser;
         }
         dosingController.setMode(DosingModeDisabled);
         dosingController2.setMode(DosingModeDisabled);
@@ -3091,4 +3246,5 @@ protected:
     PrimingSetting _priming;
     SecondarySetting _secondarySetting;
     BottleSetting _bottleSetting;
+    RunDoser       _runDoser;
 };
