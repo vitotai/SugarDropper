@@ -1,7 +1,7 @@
 #include <Arduino.h>
-#include "SugarDaddy.h"
+#include "SugarDoser.h"
 
-SugarDaddy sugarDaddy;
+ApeController sugarDaddy;
 
 void setup() {
   // put your setup code here, to run once:

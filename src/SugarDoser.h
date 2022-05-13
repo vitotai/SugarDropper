@@ -615,7 +615,7 @@ protected:
 }Buzzer(BUZZ_PIN);
 
 /*********************************************************************************/
-//  SugarDoser converts volume or gram to "steps"
+//  Doser converts volume or gram to "steps"
 /* 
 
   R: real Flow Rate
@@ -642,10 +642,10 @@ L = S1 - R * T1
 */
 //******************************************************************
 
-class SugarDoser{
+class Doser{
 public:
-    SugarDoser(){}
-    ~SugarDoser(){}
+    Doser(){}
+    ~Doser(){}
 
     void begin(byte pin,float stepPerMl, float shotAdjustment){
         _stepper.begin(pin);
@@ -880,7 +880,7 @@ public:
         _dosing = false;
     }
 protected:
-    SugarDoser _doser;
+    Doser _doser;
     uint8_t    _id;
     DosingControllerSetting *_setting;
     SwitchButton* _switchButton;
@@ -1022,10 +1022,10 @@ protected:
 /*********************************************************************************/
 // Apps
 
-class SugarBaby{
+class SugarApe{
 public:
-    SugarBaby(){}
-    virtual ~SugarBaby(){}
+    SugarApe(){}
+    virtual ~SugarApe(){}
 
     virtual void show(){}
     virtual void loop(){}
@@ -1119,7 +1119,7 @@ Function:
    Setup
 */
 
-class MenuHandler:public SugarBaby{
+class MenuHandler:public SugarApe{
 private:
     byte _selected;
 public:
@@ -1260,7 +1260,7 @@ X099/999 1330mlX
 */    
 
 
-class AutoDoser:public SugarBaby{
+class AutoDoser:public SugarApe{
 public:
     AutoDoser(){
         _totalAmount = 0;
@@ -1537,7 +1537,7 @@ Manual
 
 #define MinimumUpdateTime 100
 
-class ManualDoser:public SugarBaby{
+class ManualDoser:public SugarApe{
 public:
     ManualDoser(){}
     ~ManualDoser(){}
@@ -1652,7 +1652,7 @@ const char strPrimary[] PROGMEM =   "Primary";
 const char strSecondary[] PROGMEM = "Secondary";
 const char strDoser[] PROGMEM = "Run";
 
-class RunDoser:public SugarBaby{
+class RunDoser:public SugarApe{
 public:
     RunDoser(){}
     ~RunDoser(){}
@@ -1661,13 +1661,17 @@ public:
 
 
         _doserId = 0;
-        lcdPrint_P(1,0,strDoser);
 
         if(ReadSetting(secondaryDoserSet) != SecondaryDoserDisabled){
+            lcdPrint_P(1,0,strDoser);
             _displayDoserSelection();
             _doserChosen = false;
         }else{
+             _controller = &dosingController;
+            lcdPrint_P(1,0,strRunDoser);
             _doserChosen = true;
+            _exit=false;
+            _printAction();
         }
 
     }
@@ -1790,7 +1794,7 @@ const char strGramPerSec[] PROGMEM="g/s";
 #define TitleRow 0
 #define TitleCol 1
 
-class SugarCalibrator:public SugarBaby{
+class SugarCalibrator:public SugarApe{
 public:
     SugarCalibrator(){}
     ~SugarCalibrator(){}
@@ -1996,7 +2000,7 @@ const char strCount[] PROGMEM="Count";
 const char strGo[] PROGMEM="Go";
 //const char strAdjust[] PROGMEM="Adjust";
 
-class DoseCalibration:public SugarBaby{
+class DoseCalibration:public SugarApe{
 public:
     DoseCalibration(){}
     ~DoseCalibration(){}
@@ -2259,7 +2263,7 @@ enum TSState{
     TS_CoolTime,
     TS_Back
 };
-class TriggerSettings:public SugarBaby{
+class TriggerSettings:public SugarApe{
 public:
     TriggerSettings(){}
     ~TriggerSettings(){}
@@ -2438,7 +2442,7 @@ const char* const SoundSettingLabels[]={
     strDoseEnd
 };
 
-class SoundSetting:public SugarBaby{
+class SoundSetting:public SugarApe{
 public:
     SoundSetting(){}
     ~SoundSetting(){}
@@ -2555,7 +2559,7 @@ const char strUse[] PROGMEM="Use";
 const char strWeight[] PROGMEM="Weight";
 const char strVolume[] PROGMEM="Volume";
 
-class UnitSetting:public SugarBaby{
+class UnitSetting:public SugarApe{
 public:
     UnitSetting(){}
     ~UnitSetting(){}
@@ -2645,7 +2649,7 @@ protected:
 
 const char strBottleSetting[] PROGMEM="Bottles";
 
-class BottleSetting:public SugarBaby{
+class BottleSetting:public SugarApe{
 protected:
     bool _editing;
     bool _dirty;
@@ -2776,7 +2780,7 @@ const char strBeerTemp[] PROGMEM="Beer Temp";
  Co2 Vol.    3.2
  BeerTemp   12.C
 */
-class PrimingSetting:public SugarBaby{
+class PrimingSetting:public SugarApe{
 public:
     PrimingSetting(){}
     ~PrimingSetting(){}
@@ -2956,7 +2960,7 @@ const char strTrigger[] PROGMEM =  "Trigger";
 #define SecondaryIndexRatioInputFraction 5
 
 
-class SecondarySetting:public SugarBaby{
+class SecondarySetting:public SugarApe{
 public:
     SecondarySetting(){}
     ~SecondarySetting(){}
@@ -3116,18 +3120,18 @@ protected:
 /*************************************************************************/
 RotaryEncoder encoder(RA_CLK_PIN,RB_DT_PIN,SW_PIN);
 
-class SugarDaddy{
+class ApeController{
 public:
-    SugarDaddy():_menuHandler(&MainMenu){
+    ApeController():_menuHandler(&MainMenu){
 
     }
-    ~SugarDaddy(){}
+    ~ApeController(){}
 
     void begin(){
         SettingManager.begin();
         Buzzer.begin();
         lcdInitialize();
-        encoder.setReversedDirection(true);
+//        encoder.setReversedDirection(true);
 
         switchButton1.begin(BUTTON_PIN);
         switchButton2.begin(BUTTON2_PIN);
@@ -3234,7 +3238,7 @@ public:
     }
 protected:
 
-    SugarBaby *_running;
+    SugarApe *_running;
     MenuHandler _menuHandler;
     DoseCalibration _doseCalibrator;
     SugarCalibrator _sugarCalibrate;
