@@ -7,7 +7,7 @@
 #include <LiquidCrystal_I2C.h>
 
 
-//#define DEBUG_OUT true
+#define DEBUG_OUT true
 
 #if DEBUG_OUT
 #define DBGPrint(...) Serial.print(__VA_ARGS__)
@@ -1766,11 +1766,13 @@ protected:
 // initial calibration/setup
 //  to derive steps/ml
 typedef enum _CalibrationMode{
-Cal_SelectDoser,
+Cal_ViewParameter_1,
+Cal_ViewParameter_2,
+Cal_Back,
+
 Cal_SelectVolume,
 Cal_RunDoser,
-Cal_InputVolume,
-Cal_DisplayResult
+Cal_InputVolume
 }CalibrationMode;
 
 /*
@@ -1801,29 +1803,35 @@ public:
 
     void show(){
         loadDosingControlParameter();
-        _calVolume = 10;
         lcdPrint_P(TitleCol,TitleRow,strCalibration,true);
 
-        _doserId = 0;
-        if(ReadSetting(secondaryDoserSet) != SecondaryDoserDisabled){
-            lcdPrint_P(1,1,strDoser);
-            _displayDoserSelection();
-            _mode =Cal_SelectDoser;
-        }else{
-            controller = _doserId? &dosingController2:&dosingController;
-            EditingText.noblink();
-            _enterSelectVolume();
-        }
+        _mode =Cal_ViewParameter_1;
+        _showParameter();
+    }
+
+    void startCalibrate(uint8_t doserid){
+        _calVolume = 10;
+        _doserId = doserid;
+        controller = _doserId? &dosingController2:&dosingController;
+        DBGPrint("Calibrate Doser:");
+        DBGPrintln(_doserId? "2":"1");
+        EditingText.noblink();
+        _enterSelectVolume();
     }
     
 
     void rotateForward(){
-        if(_mode == Cal_SelectDoser){
-            if(_doserId ==1 ){
-                _doserId = 0;
-                _displayDoserSelection();
+        if(_mode ==Cal_ViewParameter_1){
+        }else if(_mode ==Cal_ViewParameter_2){
+            _mode =Cal_ViewParameter_1;
+            _showParameter();
+        }else if(_mode ==Cal_Back){
+            if(ReadSetting(secondaryDoserSet) != SecondaryDoserDisabled){
+                _mode =Cal_ViewParameter_2;                
+            }else{
+                _mode =Cal_ViewParameter_1;
             }
-
+            _showParameter();
         }else if(_mode == Cal_SelectVolume){
             if(_calVolume >=10) _calVolume += 10;
             else _calVolume += 5;
@@ -1835,11 +1843,17 @@ public:
     }
     
     void rotateBackward(){
-        if(_mode == Cal_SelectDoser){
-            if(_doserId ==0 ){
-                _doserId = 1;
-                _displayDoserSelection();
+        if(_mode ==Cal_ViewParameter_1){
+            if(ReadSetting(secondaryDoserSet) != SecondaryDoserDisabled){
+                _mode =Cal_ViewParameter_2;                
+            }else{
+                _mode =Cal_Back;
             }
+            _showParameter();
+        }else if(_mode ==Cal_ViewParameter_2){
+            _mode =Cal_Back;
+            _showParameter();
+        }else if(_mode ==Cal_Back){
         }else if(_mode == Cal_SelectVolume){
             if(_calVolume >10) _calVolume -= 10;
             else _calVolume -= 5;
@@ -1852,10 +1866,14 @@ public:
     }
 
     bool switchPushed(){
-        if(_mode == Cal_SelectDoser){
-            controller = _doserId? &dosingController2:&dosingController;
-            EditingText.noblink();
-            _enterSelectVolume();
+        if(_mode ==Cal_ViewParameter_1){
+            // sart calibrate doser 1
+            startCalibrate(0);
+        }else if(_mode ==Cal_ViewParameter_2){
+            // sart calibrate doser 2
+            startCalibrate(1);
+        }else if(_mode ==Cal_Back){
+            return true;
         }else if(_mode == Cal_SelectVolume){
             _mode = Cal_RunDoser;
             _enterCalibratingState();
@@ -1871,9 +1889,6 @@ public:
             SettingManager.save();
             // display the result
             _showResult();
-            _mode =Cal_DisplayResult;
-        } else if(_mode == Cal_DisplayResult){
-            return true;
         }
         return false;
     }
@@ -1902,11 +1917,24 @@ protected:
     uint32_t _accTime;
     uint8_t  _doserId;
     DosingController *controller;
-
-    void _displayDoserSelection(){
-        lcdClear(7,1,9);
-        EditingText.setText_P(7,1,_doserId? strSecondary:strPrimary);
-        EditingText.blink();
+    
+    void _showParameter(){
+        lcdClearLine(1);
+        if(_mode ==Cal_ViewParameter_1){
+            if(ReadSetting(secondaryDoserSet) == SecondaryDoserDisabled){
+                lcdPrint_P(2,1,strRate,true);
+            }else{
+                lcdPrint_P(2,1,strPrimary,true);
+            }
+            _showRate(DoserSetting(0,stepPerMl));
+        }
+        else if(_mode ==Cal_ViewParameter_2){
+            lcdPrint_P(2,1,strSecondary,true);
+            _showRate(DoserSetting(1,stepPerMl));            
+        }
+        else if(_mode ==Cal_Back){
+            lcdPrint_P(2,1,strBack,true);          
+        }
     }
 
     void _enterSelectVolume(){
@@ -1953,8 +1981,12 @@ protected:
     //0123456789012345
     //Rate  099.34ml/s
     void _showResult(){
-        lcdPrint_P(1,1,strRate,true);
-        float rate =_realVolume / float(_accTime) * 1000;
+        if( _doserId == 0) _mode = Cal_ViewParameter_1;
+        else _mode = Cal_ViewParameter_2;
+        _showParameter();
+    }
+
+    void _showRate(float rate){
         lcdPrintAt(6,1,rate,6,2);
         if(ReadSetting(useWeight)) lcdPrint_P(12,1,strGramPerSec);
         else lcdPrint_P(12,1,strMlPerSec);
