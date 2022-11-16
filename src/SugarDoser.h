@@ -449,6 +449,7 @@ public:
             Settings.doser[1].coolTime = 2;
             Settings.secondaryDoserSet =SecondaryDoserDisabled;
             Settings.reverseRotataryDirection = false;
+            Settings.secondaryDosageRatio = 1;
             EEPROM.put(0,Settings);
             DBGPrintln("uninitialized data.");
             return false;
@@ -1784,6 +1785,9 @@ const char strAdjust[] PROGMEM="adjust";
 //const char strRunDoser[] PROGMEM="Run Doser";
 const char strEnter[] PROGMEM="Continue";
 const char strRate[] PROGMEM="Rate";
+const char strD1[] PROGMEM="D#1";
+const char strD2[] PROGMEM="D#2";
+
 const char strMlPerSec[] PROGMEM="ml/s";
 const char strGramPerSec[] PROGMEM="g/s";
 
@@ -1926,12 +1930,12 @@ protected:
             if(ReadSetting(secondaryDoserSet) == SecondaryDoserDisabled){
                 lcdPrint_P(2,1,strRate,true);
             }else{
-                lcdPrint_P(2,1,strPrimary,true);
+                lcdPrint_P(2,1,strD1,true);
             }
             _showRate(DoserSetting(0,stepPerMl));
         }
         else if(_mode ==Cal_ViewParameter_2){
-            lcdPrint_P(2,1,strSecondary,true);
+            lcdPrint_P(2,1,strD2,true);
             _showRate(DoserSetting(1,stepPerMl));            
         }
         else if(_mode ==Cal_Back){
@@ -1988,7 +1992,8 @@ protected:
         _showParameter();
     }
 
-    void _showRate(float rate){
+    void _showRate(float stepml){
+        float rate = 1000.0 / stepml ; // in g/s
         lcdPrintAt(6,1,rate,6,2);
         if(ReadSetting(useWeight)) lcdPrint_P(12,1,strGramPerSec);
         else lcdPrint_P(12,1,strMlPerSec);
@@ -3096,6 +3101,7 @@ public:
                     _setIdx= SecondaryIndexRatioInputInteger;
                     _ratioInteger = floor(_ratio);
                     _ratioFraction =(int)((_ratio - _ratioInteger)*100.0 + 0.5);
+                    if(_ratioFraction > 99) _ratioFraction =99;
                     DBGPrint(F("Ratio:"));
                     DBGPrint(_ratio);
                     DBGPrint(F(" int:"));
@@ -3137,6 +3143,7 @@ protected:
             lcdPrint_P(2,1,strRatio,true);
             
             _ratio = ReadSetting(secondaryDosageRatio) * 100.0;
+            if(_ratio < 0) _ratio =0;
             lcdPrintAt(10,1,_ratio,6,2); //100.99
         }else{
             lcdPrint_P(2,1,strBack,true);
