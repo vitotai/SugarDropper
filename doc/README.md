@@ -4,7 +4,7 @@ Adding sugar to the bottle elminates the necessary of opening fermenter for addi
 Carbonation drops are convienet but expensive. Adjusting carbonation level is difficult. The small openning of bottles makes scooping sugar into bottles a PITA.
 Not to mention measuring the amount of sugar. Using syringe to dose syrup is more controllable and precise. However, it's just a little better than or equivalent to scooping sugar. 
 
-SugarDoser is the solution. By controlling peristatic pumps, it doses right amount of sugar solution to bottles based on the volume of bottle. More precise and convinent than syringe method.
+SugarDoser is the solution. By controlling peristatic pumps, it doses right amount of sugar solution to bottles based on the volume of bottle. More precise and convinent than the syringe method. 
 
 # Assemble
 
