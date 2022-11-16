@@ -2281,7 +2281,11 @@ Calibrated to
 
         lcdClearLine(1);
         if(_state == CS_Doser_Primary){
-            lcdPrint_P(2,1,strD1,false);
+            if(ReadSetting(secondaryDoserSet) == SecondaryDoserDisabled){
+                lcdPrint_P(2,1,strAdjust,false);
+            }else{
+                lcdPrint_P(2,1,strD1,false);
+            }
             _showAdjustValue(DoserSetting(0,shotAdjustment));
 
         }else if(_state == CS_Doser_Secondary){

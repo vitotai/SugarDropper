@@ -138,7 +138,11 @@ Automatic模式下，瓶發糖的計算參數輸入。
 
 用來校正蠕動泵的流速。
 
-進入後出現的顯示：
+進入後顯示目前流速：
+
+![calibration-1](img/calibration_0.jpg)
+
+可轉動**旋鈕**選擇Back離開，或按下**旋鈕**開始校正程序：
 
 ![calibration-1](img/calibration_1.jpg)
 
