@@ -936,8 +936,7 @@ protected:
         if(!pressed) return;
 
         if(_state==DSIdle){
-            if(_mode == DosingModeSingleShot || _mode == DosingModeManual){
-                if(_dosage >0){
+            if((_mode == DosingModeSingleShot && _dosage >0 )|| _mode == DosingModeManual){
                     if(_beepButton) Buzzer.buzz(BeepButton);
                     lcdDosingSymbol(RevDrosingSymbolChar,_id);
 
@@ -945,7 +944,6 @@ protected:
                     _state = DSPrepareToDose;
                     DBGPrint(F("PrepareToDose:"));
                     DBGPrintln(_waitToAction);
-                }
             }
         }else if(_state==DSDosing){
             if(_mode == DosingModeManual){
@@ -1802,23 +1800,11 @@ public:
     ~SugarCalibrator(){}
 
     void show(){
-        loadDosingControlParameter();
         lcdPrint_P(TitleCol,TitleRow,strCalibration,true);
 
         _mode =Cal_ViewParameter_1;
         _showParameter();
     }
-
-    void startCalibrate(uint8_t doserid){
-        _calVolume = 10;
-        _doserId = doserid;
-        controller = _doserId? &dosingController2:&dosingController;
-        DBGPrint("Calibrate Doser:");
-        DBGPrintln(_doserId? "2":"1");
-        EditingText.noblink();
-        _enterSelectVolume();
-    }
-    
 
     void rotateForward(){
         if(_mode ==Cal_ViewParameter_1){
@@ -1868,10 +1854,10 @@ public:
     bool switchPushed(){
         if(_mode ==Cal_ViewParameter_1){
             // sart calibrate doser 1
-            startCalibrate(0);
+            _startCalibrate(0);
         }else if(_mode ==Cal_ViewParameter_2){
             // sart calibrate doser 2
-            startCalibrate(1);
+            _startCalibrate(1);
         }else if(_mode ==Cal_Back){
             return true;
         }else if(_mode == Cal_SelectVolume){
@@ -1894,6 +1880,9 @@ public:
     }
 
     void dosingStateChanged(uint8_t doserId,bool dosing){
+//        DBGPrint("Cal dosingStateChanged mode=");
+//        DBGPrintln(_mode);
+
         if(_mode != Cal_RunDoser) return;
 
         if(dosing){
@@ -1916,8 +1905,21 @@ protected:
     uint32_t _startTime;
     uint32_t _accTime;
     uint8_t  _doserId;
-    DosingController *controller;
+    DosingController *_controller;
+
+
+    void _startCalibrate(uint8_t doserid){
+        loadDosingControlParameter();
+        _calVolume = 10;
+        _doserId = doserid;
+        _controller = _doserId? &dosingController2:&dosingController;
+        DBGPrint("Calibrate Doser:");
+        DBGPrintln(_doserId? "2":"1");
+        EditingText.noblink();
+        _enterSelectVolume();
+    }
     
+
     void _showParameter(){
         lcdClearLine(1);
         if(_mode ==Cal_ViewParameter_1){
@@ -1950,12 +1952,12 @@ protected:
     void _enterCalibratingState(){
         EditingText.noblink();
         _dosed=false;
-        controller->resetDoseAdjustment();
-        controller->startCalibrate();
+        _controller->resetDoseAdjustment();
         lcdClearLine(1);
         EditingText.setText_P(1,1,strRunDoser);
         EditingText.blink();
-        controller->setMode(DosingModeManual);
+        _controller->startCalibrate();
+        _controller->setMode(DosingModeManual);
         _accTime =0;
     }
 
@@ -1966,7 +1968,7 @@ protected:
         else    lcdPrint_P(14,1,strMl);
 
         _updateVolumeDisplay(_realVolume);
-         controller->setMode(DosingModeDisabled);
+        _controller->setMode(DosingModeDisabled);
     }
 
     void _updateVolumeDisplay(float vol){
@@ -1976,7 +1978,7 @@ protected:
     }
 
     void _finishCalibrate(){
-        controller->calibrate(_realVolume);
+        _controller->calibrate(_realVolume);
     }
     //0123456789012345
     //Rate  099.34ml/s
