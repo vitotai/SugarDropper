@@ -1812,6 +1812,7 @@ public:
 
     void rotateForward(){
         if(_mode ==Cal_ViewParameter_1){
+            // do nothing
         }else if(_mode ==Cal_ViewParameter_2){
             _mode =Cal_ViewParameter_1;
             _showParameter();
@@ -2005,13 +2006,14 @@ protected:
 // micro adjustment
 // to calculate Hysteresis by average
 typedef enum _DoseCalibrationState{
-    CS_SelectDoser,
+    CS_Doser_Primary,
+    CS_Doser_Secondary,
+    CS_Back,
     CS_SelectAmout,
     CS_SelectCount,
     CS_ReadyToRun,
     CS_Running,
-    CS_Adjust,
-    CS_Result
+    CS_Adjust
 } DoseCalibrationState;
 
 /*
@@ -2044,28 +2046,22 @@ public:
     DoseCalibration(){}
     ~DoseCalibration(){}
 
-    void show(){
+   void show(){
         loadDosingControlParameter();
-        lcdPrint_P(TitleCol,TitleRow,strCalibration,true);
-        
-        
-        _doserId = 0;
-        if(ReadSetting(secondaryDoserSet) != SecondaryDoserDisabled){
-            _state = CS_SelectDoser;
-            lcdPrint_P(1,1,strDoser);
-            _displayDoserSelection();
-        }else{
-            controller = _doserId? &dosingController2:&dosingController;
-            _startEnteringAmount();
-        }
+        lcdPrint_P(TitleCol,TitleRow,strShotCalibration,true);
+        _state = CS_Doser_Primary;
+        _l1menu();
     }
 
     void rotateForward(){
-        if(_state == CS_SelectDoser){
-            if(_doserId ==1){
-                _doserId =0;
-                _displayDoserSelection();
-            }
+        if(_state == CS_Doser_Primary){
+            // do nothing
+        }else if(_state == CS_Doser_Secondary){
+            _state = CS_Doser_Primary;
+            _l1menu();
+        }else if(_state == CS_Back){
+            _state = (ReadSetting(secondaryDoserSet) == SecondaryDoserDisabled)? CS_Doser_Primary:CS_Doser_Secondary;
+            _l1menu();
         }else if(_state == CS_SelectAmout){
             _amount += AdjustUnit;
             _showCalAmount();
@@ -2081,11 +2077,18 @@ public:
     }
 
     void rotateBackward(){
-        if(_state == CS_SelectDoser){
-            if(_doserId ==0){
-                _doserId =1;
-                _displayDoserSelection();
-            }
+
+        if(_state == CS_Doser_Primary){
+            _state = (ReadSetting(secondaryDoserSet) == SecondaryDoserDisabled)? CS_Back:CS_Doser_Secondary;
+            DBGPrint("Primary-backward:");
+            DBGPrintln(_state);
+            _l1menu();           
+        }else if(_state == CS_Doser_Secondary){
+            DBGPrintln("Secondary-backward");
+            _state = CS_Back;
+            _l1menu();
+        }else if(_state == CS_Back){
+             // do nothing
         }else if(_state == CS_SelectAmout){
             if(_amount > AdjustUnit){
                 _amount -= AdjustUnit;
@@ -2105,10 +2108,12 @@ public:
     }
 
     bool switchPushed(){
-        if(_state == CS_SelectDoser){
-            controller = _doserId? &dosingController2:&dosingController;
-            EditingText.noblink();
-            _startEnteringAmount();
+        if(_state == CS_Doser_Primary){
+            _startCalibrate(0);
+        }else if(_state == CS_Doser_Secondary){
+            _startCalibrate(1);
+        }else if(_state == CS_Back){
+            return true;
         }else if(_state == CS_SelectAmout){
             // show
             // Count    100
@@ -2144,21 +2149,16 @@ public:
             /* do nothing */
         }else if(_state == CS_Adjust){
             EditingText.noblink();
-            _state = CS_Result;
             //  realAmount =  (_amount + x ) * _count
             // x = realAmount/_count - _amount
             // 
             //
             float adjust =_amount - _realAmount/(float)_count;
             controller->setDoseAdjustment( adjust );
-            //0123456789012345
-            //Adjsut   -0.12ml
-            lcdPrint_P(1,1,strAdjust,true);
-            lcdPrintAt(9,1,adjust,5,2);
-            if(ReadSetting(useWeight)) lcdWriteAt(14,1,'g');
-            else lcdPrint_P(14,1,strMl);
-        }else if(_state == CS_Result){
-            return true;
+            // return to l1menu
+            _state = _doserId? CS_Doser_Secondary:CS_Doser_Primary;
+            _l1menu();
+
         }
         return false;
     }
@@ -2191,10 +2191,11 @@ public:
     }
 
 protected:
-    void _displayDoserSelection(){
-        lcdClear(7,1,9);
-        EditingText.setText_P(7,1,_doserId? strSecondary:strPrimary);
-        EditingText.blink();
+
+    void _startCalibrate(uint8_t did){        
+        _doserId = did;
+        controller = _doserId? &dosingController2:&dosingController;
+        _startEnteringAmount();
     }
 
     void _startEnteringAmount(){
@@ -2265,6 +2266,33 @@ Calibrated to
         EditingText.setNumber(7,1,_realAmount,6,2);
         EditingText.blink();
     }
+    void _showAdjustValue(float adjust){
+            //0123456789012345
+            //Adjsut   -0.12ml
+        lcdPrintAt(9,1,adjust,5,2);
+        if(ReadSetting(useWeight)) lcdWriteAt(14,1,'g');
+        else lcdPrint_P(14,1,strMl);
+    }
+
+
+    void _l1menu(){
+            DBGPrint("_l1menu:");
+            DBGPrintln(_state);
+
+        lcdClearLine(1);
+        if(_state == CS_Doser_Primary){
+            lcdPrint_P(2,1,strD1,false);
+            _showAdjustValue(DoserSetting(0,shotAdjustment));
+
+        }else if(_state == CS_Doser_Secondary){
+            lcdPrint_P(2,1,strD2,false);
+            _showAdjustValue(DoserSetting(1,shotAdjustment));
+
+        }else if(_state == CS_Back){
+            lcdPrint_P(2,1,strBack);
+        }
+    }
+
     uint32_t _dropEndTime;
     uint16_t _count;
     uint16_t _dropCount;
