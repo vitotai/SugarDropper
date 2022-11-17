@@ -12,7 +12,7 @@
 - KY-040 rotary encoder module
 - One way Relay module, or two way relay module
 - Buzzer
-- Button or QT30CM infra-red sensor(NPN type, or Normal Open)
+- Button or QT30CM infra-red sensor(NPN type, or Normal Open, outputs LOW when blocked)
 - Peristaltic pump with tube, two for secondary doser
 - wires, box, and etc.
 
@@ -57,7 +57,7 @@ SugarDropper支援二個泵，第二個可以用來加入浸泡香料或酵母�
 - Run Doser(投料)
 - Setting(設定)
 
-Automatic為主要使用的功能，在設定好出糖量或比例後，只要觸發感應器或按下按鍵，即會輸出正確的糖量。Manual是手動開始、手動停止，會計算輸出的料量。Run Doser可以用來吸入或排空糖水，在開始使用前，也可以先用這個功能來過一些star san消毒液。Settings的詳細說明如下：
+Automatic為主要使用的功能，在設定好出糖量或比例後，只要觸發感應器或按下按鍵，即會輸出正確的糖量。Manual是手動開始、手動停止，會計算輸出的料量。Run Doser可以用來吸入或排空糖水，在開始使用前，也可以先用這個功能來過一些star san消毒液。Settings的詳細說明如下。
 
 開機後會出現顯示，轉動**旋鈕**改變選擇功能，按下**旋鈕**確認執行功能：
 
@@ -69,7 +69,7 @@ Automatic為主要使用的功能，在設定好出糖量或比例後，只要�
 
 ![Main LCD](img/main-4.jpg)
 
-## Automatic mode
+## Automatic 
 自動出糖模式，按下**旋鈕**可退出。
 
 ![Automatic LCD](img/lcd_automatic.jpg)
@@ -82,12 +82,35 @@ Automatic為主要使用的功能，在設定好出糖量或比例後，只要�
 
 如果是選擇輸入Beer Vol，則(5)單次出糖量是根據瓶子大小和Priming中的參數計算出來的。如果是輸入是sugar，則轉動**旋鈕**會直接更改這個數值。
 
-## Manual mode
+#### Automatic mode(雙投料器)
+如果使用輔助投料器，也就是輔助投料器設定不為Disabled時，Automatic的LCD顯示如下：
+
+![dual doser automatic](img/dualdoser.jpg)
+
+- (1)輔助投料器狀態標示
+- (2)主投料器投料次數
+- (3)主投料器投料總合(四捨五入)
+- (4)啤酒容積
+- (5)主投料器狀態標示
+- (6)輔助投料器投料次數
+- (7)輔助投料器投料量
+- (8)主投料器投料量
+
+在這個例子中，在Priming的Input(輸入)設定為Beer Vol.，而在2nd Doser中的Auto(%)設定為1%，所以 **(7)輔助投料器投料量** 的數值為 500 * 1%=5.00。如果輔助投料器的出料量是固定量而，將Auto(%)設為**0.00**，在這個Automatic下，**長按旋鈕**，**(7)輔助投料器投料量**前的**2**標示會閃動，便可改變第二投料量的值，調整結束後按一下**旋鈕**確定。
+
+## Manual
 只是記錄出糖的時間和推算的出糖量，目前還沒想到用途。按下**旋鈕**可退出。
 
 ![Manual LCD](img/lcd_manual.jpg)
 
 左邊數字為出糖時間，右邊為出糖量。
+
+
+### Manual(雙投料器)
+
+![dual manual](img/dualdoser_man.jpg)
+
+上一行為主投料器的數值，下一行為輔助投料器的數值。右上角為主投料器狀態，左上角為輔助投料器狀態。
 
 ## Run Doser
 用來啓動泵，用來吸取或排空管線。
@@ -179,27 +202,6 @@ Automatic模式下，瓶發糖的計算參數輸入。
 設定瓶子的大小，單位為ml。最多有10組設定，設定為0時表示空白。
 
 
-#### Automatic mode(雙投料器)
-如果使用輔助投料器，也就是輔助投料器設定不為Disabled時，Automatic的LCD顯示如下：
-
-![dual doser automatic](img/dualdoser.jpg)
-
-- (1)輔助投料器狀態標示
-- (2)主投料器投料次數
-- (3)主投料器投料總合(四捨五入)
-- (4)啤酒容積
-- (5)主投料器狀態標示
-- (6)輔助投料器投料次數
-- (7)輔助投料器投料量
-- (8)主投料器投料量
-
-在這個例子中，在Priming的Input(輸入)設定為Beer Vol.，而在2nd Doser中的Auto(%)設定為1%，所以 **(7)輔助投料器投料量** 的數值為 500 * 1%=5.00。如果輔助投料器的出料量是固定量而，將Auto(%)設為**0.00**，在這個Automatic下，**長按旋鈕**，**(7)輔助投料器投料量**前的**2**標示會閃動，便可改變第二投料量的值，調整結束後按一下**旋鈕**確定。
-
-### Manual(雙投料器)
-
-![dual manual](img/dualdoser_man.jpg)
-
-上一行為主投料器的數值，下一行為輔助投料器的數值。右上角為主投料器狀態，左上角為輔助投料器狀態。
 
 # 我的原型機
 因為沒有類似3D印表機之類的設備、也不具備鐵工或精細的木工能，我的原型機只用我能找到組件完成。剛開始不確定要使用那一個泵，所以我把泵和控制器本體分開，因為泵的控制其實就是電源，所以連接並不困難，而且實作後發現分開有另一個好處：減少電磁干擾（EMI）。馬達很容易產生EMI，事實上，我買了兩種泵，比較大流量的，和小流量的，大流量的泵在運作時，干擾十分嚴重，嚴重到有時候用按鍵也無法控制。所以設計時，要考慮EMI的問題。
