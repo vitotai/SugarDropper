@@ -7,7 +7,7 @@
 #include <LiquidCrystal_I2C.h>
 
 
-#define DEBUG_OUT true
+//#define DEBUG_OUT true
 
 #if DEBUG_OUT
 #define DBGPrint(...) Serial.print(__VA_ARGS__)
