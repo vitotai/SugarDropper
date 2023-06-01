@@ -7,7 +7,7 @@
 #include <LiquidCrystal_I2C.h>
 
 
-//#define DEBUG_OUT true
+#define DEBUG_OUT true
 
 #if DEBUG_OUT
 #define DBGPrint(...) Serial.print(__VA_ARGS__)
@@ -1239,7 +1239,7 @@ const char str2nd[]  PROGMEM="\3";
 #define DosageCountSapce 3
 
 
-#define AccBeerVolCol 4
+#define AccBeerVolCol 5
 #define AccBeerVolRow 0
 #define AccBeerVolSpace 3
 #define AccBeerVolSymbolCol 8
@@ -1425,7 +1425,7 @@ public:
             // udpateTotal, suppose it _amount ++, but the amount might changed. so...
              if(doserId==0){
                 _totalAmount += dosingController.getDosingVolume();
-                _beerVolume += _beerVolume;
+                _totalBeer += _beerVolume;
                 _updateTotal();
              }
         }
@@ -1471,6 +1471,7 @@ protected:
         _count =0;
         _count2 =0;
         _beerVolume =0;
+        _totalBeer =0.0;
     }
 
     void _calPrimingSugar(){
@@ -1527,7 +1528,13 @@ c2xACC2    Amount
             int rounded =(int) round(_totalAmount);
             lcdPrintAtZero(5,0,rounded,3);
             #if ACC_BEER_AMOUNT
-            lcdPrintAtZero(0,1,(uint16_t) round( _totalBeer/1000.0),2);
+            float inLiter = _totalBeer/1000.0;
+            if(inLiter < 1.0){
+                lcdWriteAt(0,1,'.');
+                lcdPrintAtZero(1,1,(uint16_t) round(inLiter*10),1);
+            }else{
+                lcdPrintAtZero(0,1,(uint16_t) round(inLiter),2);
+            }
             #endif
         }else{
             lcdPrintAt(AccumulatedOutputCol,AccumulatedOutputRow,_totalAmount,AccumulatedOutputSpace,2);
