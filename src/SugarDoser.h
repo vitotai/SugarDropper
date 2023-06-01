@@ -1217,7 +1217,7 @@ A:999.25  99.25ml
 
 v2
 0123456789012345
-# 999    1330mlX 
+#999     1330mlX 
 A:999.25 99.25g
 
 */
@@ -1238,6 +1238,12 @@ const char str2nd[]  PROGMEM="\3";
 #define DosageCountSymbolCol 0
 #define DosageCountSapce 3
 
+
+#define AccBeerVolCol 4
+#define AccBeerVolRow 0
+#define AccBeerVolSpace 3
+#define AccBeerVolSymbolCol 8
+
 #define AccumulatedOutputRow 1
 #define AccumulatedOutputCol 2
 #define AccumulatedOutputStringCol 0
@@ -1246,6 +1252,9 @@ const char str2nd[]  PROGMEM="\3";
 #define MinimumBeerVolume 50
 #define DefaultBeerVolume  330
 #define MaximumBeerVolume 5000
+
+#define ACC_BEER_AMOUNT true
+
 
 /*
 0123456789012345
@@ -1262,13 +1271,11 @@ X099/999 1330mlX
 class AutoDoser:public SugarApe{
 public:
     AutoDoser(){
-        _totalAmount = 0;
-        _count =0;
-        _count2 =0;
-       
+        _reset();
     }
 
     ~AutoDoser(){}
+    
 
     void show(){
          _changeSecondary=false;
@@ -1292,13 +1299,17 @@ public:
             }else{
                 _dosage2 = _doser2Ratio * (_inputBeer? _beerVolume:_amount);
             }
+            #if ! ACC_BEER_AMOUNT
             _updateCount2();
+            #endif
             _updateDosage2();
         }else{
             // "A:"
             lcdPrint_P(AccumulatedOutputStringCol,AccumulatedOutputRow,strTotal);
             // "#"
             lcdWriteAt(DosageCountSymbolCol,DosageCountRow,'#');
+            // 'L'
+            lcdWriteAt(AccBeerVolSymbolCol,AccBeerVolRow,'L');
         }
 
         // dosage unit
@@ -1406,12 +1417,15 @@ public:
                 _updateCount();
             }else{
                 _count2 ++;
+                #if ! ACC_BEER_AMOUNT
                 _updateCount2();
+                #endif
             }
         }else{
             // udpateTotal, suppose it _amount ++, but the amount might changed. so...
              if(doserId==0){
                 _totalAmount += dosingController.getDosingVolume();
+                _beerVolume += _beerVolume;
                 _updateTotal();
              }
         }
@@ -1445,11 +1459,19 @@ protected:
     uint16_t _count;
     uint16_t _count2;
     int16_t _beerVolume;
+    float _totalBeer;
     bool _inputBeer;
     bool _useSecondary;
     float _dosage2;
     float _doser2Ratio;
     bool  _changeSecondary;
+
+    void _reset(){
+        _totalAmount = 0;
+        _count =0;
+        _count2 =0;
+        _beerVolume =0;
+    }
 
     void _calPrimingSugar(){
         //
@@ -1480,28 +1502,43 @@ protected:
     // LCD display
 /*
 0123456789012345
-#999           X 
+#999 100L      X 
 A:999.25 99.25g
 
 0123456789012345
 X099/999 1330mlX
 99x99.25 99.25g
 
+count/ACC beervol
+c2xACC2    Amount
+
 */    
     void _updateCount(){
         lcdPrintAtZero(DosageCountCol,DosageCountRow,_count,DosageCountSapce);
     }
-    
+    #if! ACC_BEER_AMOUNT
     void _updateCount2(){
         lcdPrintAtZero(0,1,_count2,2);
     }
+    #endif
 
     void _updateTotal(){
         if(_useSecondary){
             int rounded =(int) round(_totalAmount);
             lcdPrintAtZero(5,0,rounded,3);
+            #if ACC_BEER_AMOUNT
+            lcdPrintAtZero(0,1,(uint16_t) round( _totalBeer/1000.0),2);
+            #endif
         }else{
             lcdPrintAt(AccumulatedOutputCol,AccumulatedOutputRow,_totalAmount,AccumulatedOutputSpace,2);
+
+
+            float inLiter = _totalBeer/1000.0;
+            if(inLiter >= 10.0){
+                lcdPrintAt(AccBeerVolCol,AccBeerVolRow,(uint16_t) round(inLiter),AccBeerVolSpace);
+            }else{
+                lcdPrintAt(AccBeerVolCol,AccBeerVolRow,inLiter,AccBeerVolSpace,1);
+            }
         }
     }
     void _updateDosage(){
