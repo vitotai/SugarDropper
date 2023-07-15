@@ -7,7 +7,7 @@
 #include <LiquidCrystal_I2C.h>
 
 
-#define DEBUG_OUT true
+//#define DEBUG_OUT true
 
 #if DEBUG_OUT
 #define DBGPrint(...) Serial.print(__VA_ARGS__)
@@ -1225,6 +1225,9 @@ A:999.25 99.25g
 const char strTotal[]  PROGMEM="A:";
 const char str2nd[]  PROGMEM="\3";
 
+const char strResetExit_0[] PROGMEM=" RESET >EXIT";
+const char strResetExit_1[] PROGMEM=">RESET  EXIT";
+
 #define DosageAmountRow 1
 #define DosageAmountCol 9
 #define DosageAmountSpace 5
@@ -1278,7 +1281,8 @@ public:
     
 
     void show(){
-         _changeSecondary=false;
+        _exitOrReset = false;
+        _changeSecondary=false;
         _inputBeer = ReadSetting(inputBeer);
         _useSecondary = ReadSetting(secondaryDoserSet) != SecondaryDoserDisabled;
 
@@ -1340,7 +1344,9 @@ public:
             _dosage2 += DoseAdjustUnit;
             if(_dosage2 > MaximumAmount) _dosage2 = MaximumAmount;
             _updateDosage2();
-
+        }else if (_exitOrReset){
+            _exitResetSelection=(_exitResetSelection ==0)? 1:0;
+            _showExitReset();
         }else if(_inputBeer){
             int vol = BottleList.next();
             if( _beerVolume != vol){
@@ -1377,7 +1383,9 @@ public:
                 _dosage2 -= DoseAdjustUnit;
                 _updateDosage2();
             }
-
+        }else if (_exitOrReset){
+            _exitResetSelection=(_exitResetSelection ==0)? 1:0;
+            _showExitReset();
         }else if(_inputBeer){
             int vol = BottleList.previous();
             if( _beerVolume != vol){
@@ -1436,8 +1444,19 @@ public:
             _changeSecondary=false;
             EditingText.noblink();
             return false;
+         }else if (_exitOrReset){
+            if(_exitResetSelection ==0){
+                return true;
+            }else{
+                _reset();
+                show();
+            }
+         }else{
+            _exitResetSelection = 0;
+            _exitOrReset=true;
+            _showExitReset();
          }
-        return true;
+        return false;
     }
 
     bool switchLongPressed(){
@@ -1465,6 +1484,8 @@ protected:
     float _dosage2;
     float _doser2Ratio;
     bool  _changeSecondary;
+    bool _exitOrReset;
+    uint16_t _exitResetSelection;
 
     void _reset(){
         _totalAmount = 0;
@@ -1472,6 +1493,15 @@ protected:
         _count2 =0;
         _beerVolume =0;
         _totalBeer =0.0;
+    }
+    
+    void _showExitReset(){
+        lcdClearLine(1);
+        if(_exitResetSelection ==0){
+            lcdPrint_P(1,1,strResetExit_0);
+        }else{
+            lcdPrint_P(1,1,strResetExit_1);
+        }
     }
 
     void _calPrimingSugar(){
@@ -1529,10 +1559,11 @@ c2xACC2    Amount
             lcdPrintAtZero(5,0,rounded,3);
             #if ACC_BEER_AMOUNT
             float inLiter = _totalBeer/1000.0;
+            if(inLiter > 100.0) inLiter=inLiter - floor(inLiter/100)*100; // don't have space for over 100liter
             if(inLiter < 1.0){
                 lcdWriteAt(0,1,'.');
                 lcdPrintAtZero(1,1,(uint16_t) round(inLiter*10),1);
-            }else{
+            }else{                
                 lcdPrintAtZero(0,1,(uint16_t) round(inLiter),2);
             }
             #endif
@@ -1690,10 +1721,13 @@ protected:
 
 const char strExit[] PROGMEM="Exit";
 const char strRun[] PROGMEM="Run";
-const char strStop[] PROGMEM="Stop";
+const char strStop[] PROGMEM=">Stop";
 const char strPrimary[] PROGMEM =   "Primary";
 const char strSecondary[] PROGMEM = "Secondary";
 const char strDoser[] PROGMEM = "Run";
+
+const char strRunOrExitRun[] PROGMEM = ">Run  Exit";
+const char strRunOrExitExit[] PROGMEM= " Run >Exit";
 
 class RunDoser:public SugarApe{
 public:
@@ -1793,13 +1827,20 @@ protected:
     void _printAction(){
         lcdClear(1,1,4);
         if(_exit){
-            EditingText.setText_P(1,1,strExit);
+            // EditingText.setText_P(1,1,strExit);
+            lcdPrint_P(1,1,strRunOrExitExit);
         }else{
             DBGPrint(F("Is Dosing:"));
             DBGPrintln(_controller->isDosing());
-            EditingText.setText_P(1,1,_controller->isDosing()? strStop:strRun);
+
+            //EditingText.setText_P(1,1,_controller->isDosing()? strStop:strRun);
+            if(_controller->isDosing()){
+                lcdPrint_P(1,1,strStop,true);       
+            }else{
+                lcdPrint_P(1,1,strRunOrExitRun);       
+            }
         }
-         EditingText.blink();
+        //EditingText.blink();
     }
 };
 
@@ -1827,17 +1868,13 @@ cal by 100.24 ml
 const char strCalBy[] PROGMEM="Vol";
 const char strAdjust[] PROGMEM="adjust";
 //const char strRunDoser[] PROGMEM="Run Doser";
-const char strEnter[] PROGMEM="Continue";
+const char strEnter[] PROGMEM="Next";
 const char strRate[] PROGMEM="Rate";
 const char strD1[] PROGMEM="D#1";
 const char strD2[] PROGMEM="D#2";
 
 const char strMlPerSec[] PROGMEM="ml/s";
 const char strGramPerSec[] PROGMEM="g/s";
-
-//const char strPrimary[] PROGMEM =   "Primary";
-//const char strSecondary[] PROGMEM = "Secondary";
-//const char strDoser[] PROGMEM = "Doser";
 
 #define TitleRow 0
 #define TitleCol 1
