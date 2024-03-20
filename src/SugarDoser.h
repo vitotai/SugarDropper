@@ -52,9 +52,6 @@
 #define MinimumGapBetweenDrop 1000
 #define CalibrationDropDelay 3000
 
-#define BeepButton 100
-#define BeepDoseStart 300
-#define BeepDoseEnd 550
 
 #define BlinkingShowTime 600
 #define BlinkingHideTime 150
@@ -581,6 +578,10 @@ public:
 BottleListClass BottleList;
 /*********************************************************************************/
 //  Buzzer
+const uint16_t BeepButton[] PROGMEM ={100,0};
+const uint16_t BeepDoseStart[] PROGMEM ={300,0};
+const uint16_t BeepDoseEnd[] PROGMEM ={550,0};
+const uint16_t BeepError[] PROGMEM ={100,100,100,100,100,0};
 
 class BuzzerClass{
 public:
@@ -591,28 +592,54 @@ public:
     
     void begin(){
         _buzzing = false;
+        _playing = false;
         pinMode(_pin, OUTPUT);
         digitalWrite(_pin,LOW);
     }
 
     void loop(){
-        if(_buzzing){
+        if(_playing){
             if(millis() >= _stop){
-                 digitalWrite(_pin,LOW);
-                 _buzzing = false;                 
+                _play();
             }
         }
     }
-
-    void buzz(uint32_t duration){
-        _stop = millis() + duration;
-        _buzzing = true;
-        digitalWrite(_pin,HIGH);
+    void buzz(const uint16_t* song){
+        if(_playing) _stopBuzz();
+        _playing = true;
+        _ptrCurrentNote = song;
+        _play();
     }
 protected:
     uint8_t _pin;
     bool    _buzzing;
     uint32_t _stop;
+    bool    _playing;
+    const uint16_t *_ptrCurrentNote;
+
+    void _play(){
+        uint32_t duration=(uint32_t)pgm_read_word(_ptrCurrentNote);
+        _ptrCurrentNote ++;
+        if(duration ==0){
+            _playing =false;
+            _stopBuzz();
+        }else{
+            _stop = millis() + duration;            
+            if(_buzzing){
+                _stopBuzz();
+            }else{
+                _startBuzz();
+            }
+        }
+    }
+    void _startBuzz(){
+        _buzzing = true;
+        digitalWrite(_pin,HIGH);
+    }
+    void _stopBuzz(){
+        digitalWrite(_pin,LOW);
+         _buzzing = false;                 
+    }
 }Buzzer(BUZZ_PIN);
 
 /*********************************************************************************/
@@ -711,7 +738,7 @@ public:
     float getDosingVolume(){
         // calculate running since latest start
         uint32_t steps = _stepper.steps();
-//        DBGPrint(F("run steps:"));
+//        DBGPrint(F("steps:"));
 //        DBGPrintln(steps - _startDosingPos);
         return (float)(steps - _startDosingPos) / _stepPerMl;
     }
@@ -727,7 +754,8 @@ protected:
 enum DosingMode{
 DosingModeDisabled,
 DosingModeSingleShot,
-DosingModeManual
+DosingModeManual,
+DosingModeForced
 };
 
 enum DosingState{
@@ -797,17 +825,17 @@ public:
     // most be call every loop
     bool isDosingStateChanged(){
         bool ret=false;
-        if(_isPositionSensor){
-            if(_switchButton->statusChangedFrom(_buttonPressed)){
-                _buttonPressed=_switchButton->pressed();
-                _handleSensorState(_buttonPressed);
-            }
-        }else{
-            if(_mode != DosingModeDisabled){
+        if(_mode == DosingModeSingleShot || _mode == DosingModeManual){
+            if(_isPositionSensor){
+                if(_switchButton->statusChangedFrom(_buttonPressed)){
+                    _buttonPressed=_switchButton->pressed();
+                    _handleSensorState(_buttonPressed);
+                }
+            }else{
                 if(_switchButton->statusChangedFrom(_buttonPressed)){
                     _buttonPressed=_switchButton->pressed();
                     _handleButtonAction(_buttonPressed);
-                }
+                } 
             }
         }
 
@@ -816,8 +844,12 @@ public:
             _processStateForDropingStateChange(_dosing);
             if(_dosing){
                 if(_beepDoseStart) Buzzer.buzz(BeepDoseStart);
+                _abnormalStop = false;
             }else{
-                if(_beepDoseEnd)  Buzzer.buzz(BeepDoseEnd);
+                if(_beepDoseEnd){
+                    if(_abnormalStop) Buzzer.buzz(BeepError);
+                    else Buzzer.buzz(BeepDoseEnd);
+                }
             }
             ret =true;
         }
@@ -901,6 +933,7 @@ protected:
     bool _beepDoseEnd;
     bool _beepButton;
     byte _dosedIndPin;
+    bool _abnormalStop;
 
     void _handleSensorState(bool inPosition){
         _inPosition = inPosition;
@@ -976,7 +1009,10 @@ protected:
                 _state = DSIdle;
             }else{
                 if(_isPositionSensor){
-                    if( _mode == DosingModeManual || !_inPosition){
+                    if(!_inPosition){                        
+                        if( _mode == DosingModeSingleShot){
+                            _abnormalStop =true;
+                        }
                         _enterWaitCoolingState();
                     }else{
                         _enterDosedState();
@@ -1749,6 +1785,7 @@ public:
             _doserChosen = true;
             _exit=false;
             _printAction();
+            _controller->setMode(DosingModeForced);
         }
 
     }
