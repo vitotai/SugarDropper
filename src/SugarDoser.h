@@ -271,6 +271,7 @@ public:
     void setNumberLeading(uint8_t col, uint8_t row,int number,uint8_t space,const char lead){
          _col=col; _row = row;
         _len=sprintInt(_number,number);
+        if(_len > space) _len=space;
         _number[_len]='\0';
         _space = space;
         _isText=false;
@@ -281,6 +282,7 @@ public:
         _lead = ' ';
          _col=col; _row = row;
         _len=sprintFloat(_number,number,precision);
+        if(_len > space) _len=space;
         _number[_len]='\0';
         _space =space;
         _isText=false;
@@ -447,6 +449,11 @@ public:
             Settings.secondaryDoserSet =SecondaryDoserDisabled;
             Settings.reverseRotataryDirection = false;
             Settings.secondaryDosageRatio = 1;
+            Settings.beerTemperature = 20;
+            Settings.carbonation = 2.5;
+            Settings.inputBeer = 0;
+            Settings.sugarRatio = 50;
+            Settings.useWeight = 1;
             EEPROM.put(0,Settings);
             DBGPrintln("uninitialized data.");
             return false;
@@ -1086,6 +1093,7 @@ const char strBack[]  PROGMEM ="Back";
 const char strSoundSetting[] PROGMEM="Sound Setting";
 const char strSetting[]  PROGMEM="Setting";
 const char strMl[] PROGMEM = "ml";
+const char strCl[] PROGMEM = "cl";
 const char strUnitSetting[] PROGMEM ="Unit";
 const char strFunction[] PROGMEM ="Function";
 const char strAutoDoseSettings[] PROGMEM="Priming";
@@ -1116,7 +1124,6 @@ extern const MenuList MainMenu;
 const MenuItem SettingMenuItems[]={
     {str2ndDoser, false, {.mode = SugarAppSecondarySetting}},
     {strUnitSetting, false, {.mode=SugarAppUnitSetting}},
-    {strAutoDoseSettings, false, { .mode=SugarAppPriming }},
     {strDropSettings, false, { .mode=SugarAppDosingSettingMode }},
     {strSoundSetting, false, {.mode=SugarAppSoundSetting}},
     {strCalibration, false,{ .mode=SugarAppCalibration }},
@@ -1133,8 +1140,9 @@ const MenuList SettingMenu={
 
 const MenuItem mainMenuItems[]  ={
     {strAutomatic,false, {.mode = SugarAppAutomatic}},
-    {strManual, false, {.mode =SugarAppManual}},
+    {strAutoDoseSettings, false, { .mode=SugarAppPriming }},
     {strRunDoser, false, {.mode =SugarAppRunDoser}},
+    {strManual, false, {.mode =SugarAppManual}},
     {strSetting, true, {.subMenu = &SettingMenu}}
 };
 
@@ -1269,8 +1277,8 @@ const char strResetExit_1[] PROGMEM=">RESET  EXIT";
 #define DosageAmountSpace 5
 
 #define BeerVolumeRow 0
-#define BeerVolumeCol 9
-#define BeerVolumeSpace 4
+#define BeerVolumeCol 10
+#define BeerVolumeSpace 3
 
 #define DosageCountRow 0
 #define DosageCountCol 1
@@ -1280,8 +1288,8 @@ const char strResetExit_1[] PROGMEM=">RESET  EXIT";
 
 #define AccBeerVolCol 5
 #define AccBeerVolRow 0
-#define AccBeerVolSpace 3
-#define AccBeerVolSymbolCol 8
+#define AccBeerVolSpace 4
+#define AccBeerVolSymbolCol 9
 
 #define AccumulatedOutputRow 1
 #define AccumulatedOutputCol 2
@@ -1297,11 +1305,11 @@ const char strResetExit_1[] PROGMEM=">RESET  EXIT";
 
 /*
 0123456789012345
-#999           X 
+#999 00.0L100clX 
 A:999.25 99.25g
 
 0123456789012345
-X099/999 1330mlX
+X099/999  133clX
 99x99.25 99.25g
 
 */    
@@ -1354,11 +1362,11 @@ public:
 
         // dosage unit
         if(ReadSetting(useWeight)) lcdWriteAt(DosageAmountCol + DosageAmountSpace,DosageAmountRow,'g');
-        else lcdPrint_P(DosageAmountCol + DosageAmountSpace,DosageAmountRow,strMl);
+        else lcdPrint_P(DosageAmountCol + DosageAmountSpace,DosageAmountRow,strCl);
 
 
         if(_inputBeer){
-            lcdPrint_P(BeerVolumeCol + BeerVolumeSpace,BeerVolumeRow,strMl);
+            lcdPrint_P(BeerVolumeCol + BeerVolumeSpace,BeerVolumeRow,strCl);
             _updateBeerVolume();
             _calPrimingSugar();
         }
@@ -1569,11 +1577,11 @@ protected:
     // LCD display
 /*
 0123456789012345
-#999 100L      X 
+#999 99.9L 33clX 
 A:999.25 99.25g
 
 0123456789012345
-X099/999 1330mlX
+X099/999  133clX
 99x99.25 99.25g
 
 count/ACC beervol
@@ -1608,7 +1616,7 @@ c2xACC2    Amount
 
 
             float inLiter = _totalBeer/1000.0;
-            if(inLiter >= 10.0){
+            if(inLiter >= 100.0){
                 lcdPrintAt(AccBeerVolCol,AccBeerVolRow,(uint16_t) round(inLiter),AccBeerVolSpace);
             }else{
                 lcdPrintAt(AccBeerVolCol,AccBeerVolRow,inLiter,AccBeerVolSpace,1);
@@ -1630,7 +1638,7 @@ c2xACC2    Amount
     void _updateBeerVolume(){
         DBGPrint(F("Beer Vol:"));
         DBGPrintln(_beerVolume);
-        lcdPrintAt(BeerVolumeCol,BeerVolumeRow,_beerVolume,BeerVolumeSpace);
+        lcdPrintAt(BeerVolumeCol,BeerVolumeRow,_beerVolume/10,BeerVolumeSpace);
     }
 };
 
@@ -2856,7 +2864,7 @@ protected:
         
         lcdPrintAt(0,1,_idx,2);
         lcdWrite(':');
-        lcdPrint_P(14,1,strMl);
+        lcdPrint_P(14,1,strCl);
 
         _currentValue = BottleList.getBottle(_idx);
         
@@ -2865,7 +2873,7 @@ protected:
         _printValue();
     }
     void _printValue(){
-        EditingText.setNumber(9,1,_currentValue,4);
+        EditingText.setNumber(9,1,_currentValue/10,4);
         EditingText.show();
     }
 public:
@@ -2884,8 +2892,8 @@ public:
     void rotateForward(){
         if(_editing){
             
-            if( (_currentValue + 5) < MaxVolume){
-                _currentValue +=5;
+            if( (_currentValue + 10) < MaxVolume){
+                _currentValue +=10;
                 _dirty =true;
                 _printValue();
             }
@@ -2900,8 +2908,8 @@ public:
 
     void rotateBackward(){
         if(_editing){
-            if( (_currentValue -5)> MinVolume){
-                _currentValue -= 5;
+            if( (_currentValue -10)> MinVolume){
+                _currentValue -= 10;
                 _dirty =true;
                 _printValue();
             }
