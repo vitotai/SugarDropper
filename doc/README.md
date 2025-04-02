@@ -55,6 +55,7 @@ A rotary encoder is used for operation. Turning the rotary encoder to **change v
 There are four functions after power on.
 
 - Automatic
+- Priming
 - Manual
 - Run Doser
 - Setting
@@ -102,6 +103,7 @@ When a secondary doser is used, the display of LCD is something like this.
 In this case of LCD display, the **Input** in **Priming** is set to **Beer Vol**, and **Auto(%)** in **2nd Doser** is set to 1.00%, so the value of **(7)Dosage of the secondary doser** is calculated as 500 * 1% = 5.00. To have fixed amount of the secondary doser, set **Auto(%)** to **0.00**. **Long press** the rotary ecoder, the **2** symbole before (7) will blink, and the number of (7) can be changed by turning the rotary encoder. Press the rotary encoder when finishing editing.
 
 
+
 ## Manual
 It will note the time and amount of sugar dosed. I have no idea how to use this funtion, yet. Press the rotary encoder to exit.
 
@@ -125,6 +127,26 @@ The the pump is running, "Stop" will show, and pressing the rotary encoder again
 
 If secondary doser is enabled, selecting which doser is necessary prior to run
 
+
+### Priming
+The parameters to calculate the amout of sugar solution in Automatic mode. (It was inside Setting menu.)
+
+
+- **Input**: **Beer Vol**(beer or bottle volume), or **sugar**. If **Beer Vol** is selected, the dosage will be calculated based the following parameters.
+- **Beer Temp.**: Beer temperature.
+- **CO2 Vol.**: Desired carbonation level.
+- **(Priming)With**: **Sugar** or **Krausen**. Choose **Krausen** for krauning and speise.
+
+if **Sugar** is selected
+- **Brix**: Brix of sugar solution. 50Brix is recommended.
+
+if **Krausen** is selected
+- **Krausen SG**: current gravity of krausening beer or speise wort. 
+- **Krausen FG**: anticipated FG of krausening beer or speise wort.
+
+If **Input** is set to **Sugar**, the other options are not used.
+
+
 ## Setting
 
 Turning the rotary encoder to select items, press the rotary encoder to edit values. The values or options will blink to indicate editing mode. Press the rotary encoder to complete editing. There is a **Back** option in each submenu to back to uppper menu.
@@ -143,15 +165,6 @@ The secondary doser is designed to dose tincture or yeast, which sould be hydrat
 #### Unit 
 The unit of sugar solution. It can be **Volume** or **Weight**. The volume shoule be propotional to the weight. It's very difficult to measure small volume, so using **Weight** is recommended. (This option might be removed in the future.)
 
-#### Priming
-The parameters to calculate the amout of sugar solution in Automatic mode.
-
-- **Input**: **Beer Vol**(beer or bottle volume), or **sugar**. If **Beer Vol** is selected, the dosage will be calculated based the following parameters.
-- **Brix**: Brix of sugar solution. 50Brix is recommended.
-- **CO2 Vol.**: Desired carbonation level.
-- **Beer Temp.**: Beer temperature.
-
-If **Input** is set to **Sugar**, the other 3 options are not used.
 
 #### Dosing Control
 
@@ -230,3 +243,11 @@ The is the rough requirement of peristaltic pumps.
 # Note
 It is a simple but helpful, yet fun, project. Use the code as you like, and modify the code whatever you want.
 Don't ask for Imperial unit support.
+
+
+# About Krausening
+
+The difference between priming by krausening and suger is little to none. However, it's a fair amount of krausening beer or wort compared to sugar(solution). Therefore,
+
+ - The flow rate of the Peristaltic pump used should be higher. Around a ounce or more might be needed. 
+ - It's better to use wand or put the tubing neer the bottom of bottles. Otherwise, CO2 might escape from wort because of agitation. Foams might form.  

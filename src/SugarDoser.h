@@ -24,9 +24,12 @@
 
 #define AdjustUnit 0.01
 #define DoseAdjustUnit 0.05
+#define KrausenDoseAdjustUnit 0.5
+
 #define MaximumAmount 99.0
 #define MinimumAmount 0.5
 #define MinimumDoseAmount 0.0
+#define MaximumDoseAmount 999.0
 
 #define MaximumCalibrationCount 100
 
@@ -378,6 +381,31 @@ float calculatePrimingSugar(float CD, float beerAmount, float temperature){
      
     return 15.195 * VB * ( CD - 3.0378 + 0.050062 * T - 0.00026555 * T * T);
 }
+
+/*********************************************************************************/
+// krausening calculator
+//  Vk = 1.95 * Vt * Ck / (GUk - GUb)
+// Vk: volume of krausening beer needed, in quart
+// Vt: Total Volume including krausening beer, in quart
+// Ck:  carbonation level from krausening in volumes.
+// GUk: Current Gravity of krausening Beer, in Points. ( 1052 instead of 1.052)
+// GUb: Final Gravity of krausening Beer, in Points. ( 1012 instead of 1.012)
+
+// input
+//CD: target carbonation in volume
+//  beetAmount = beer volume in liter
+//  temperature = beer temperature in Celisus
+// sg: gravity in 10xx form
+// fg: gravity in 10xx form
+float calculateKrauseningBeer(float CD, float total, float temperature,uint16_t sg, uint16_t fg){
+    
+    float Vt =  total;  // use liter. so don't need to convert back to quart
+    float T = 32 + temperature * 9/5; ; // to F
+    float Ck= CD - 3.0378 + 0.050062 * T - 0.00026555 * T * T;
+     
+    return 1.95 * Vt * Ck / (float)(sg - fg);
+}
+
 /********************************************************************************/
 //     SG = (Brix / (258.6-((Brix / 258.2)*227.1))) + 1
 
@@ -420,6 +448,9 @@ struct _Settings{
     float    secondaryDosageRatio;
     DosingControllerSetting doser[2];
     uint8_t     reverseRotataryDirection;
+    uint8_t  krausening;
+    uint16_t krausenGravity;
+    uint16_t krausenFG;
 } Settings;
 
 #define Set2CV(v) (float)(v)/10.0
@@ -454,6 +485,9 @@ public:
             Settings.inputBeer = 0;
             Settings.sugarRatio = 50;
             Settings.useWeight = 1;
+            Settings.krausening = 0;
+            Settings.krausenGravity=1050;
+            Settings.krausenFG = 1012;
             EEPROM.put(0,Settings);
             DBGPrintln("uninitialized data.");
             return false;
@@ -1333,7 +1367,7 @@ public:
         if(_inputBeer){
             _beerVolume = BottleList.currentBottle();
         }else{
-            if(_amount < MinimumDoseAmount || _amount > MinimumDoseAmount) _amount = 5;
+            if(_amount < MinimumDoseAmount || _amount > MaximumDoseAmount) _amount = 5;
         }
         
         if(_useSecondary){
@@ -1408,8 +1442,9 @@ public:
                 }
             }
         }else{
-           _amount += DoseAdjustUnit;
-            if(_amount > MaximumAmount) _amount = MaximumAmount;
+        
+           _amount += ReadSetting(krausening)? KrausenDoseAdjustUnit:DoseAdjustUnit;
+            if(_amount > MaximumDoseAmount) _amount = MaximumDoseAmount;
             _updateDosage();
             if(_useSecondary){
                 if(_doser2Ratio > 0){
@@ -1448,7 +1483,7 @@ public:
 
             }
         }else{
-            _amount -= DoseAdjustUnit;
+            _amount -=  ReadSetting(krausening)? KrausenDoseAdjustUnit:DoseAdjustUnit;
             if(_amount <MinimumDoseAmount) _amount = MinimumDoseAmount;
             _updateDosage();
 
@@ -1554,23 +1589,33 @@ protected:
         DBGPrint(Set2CV(ReadSetting(carbonation)));
         DBGPrint(F(" beerTemperature:"));
         DBGPrintln(ReadSetting(beerTemperature));
-
-        float ps=calculatePrimingSugar(Set2CV(ReadSetting(carbonation)),(float)_beerVolume/1000.0,(float)ReadSetting(beerTemperature));
-        float weight = ps / (float)ReadSetting(sugarRatio) * 100.0;
-        // if the unit is volume, calculate SG and derive volume
-        // however, temperature might be a problem. ignore that for now
-        DBGPrint(F("PS:"));
-        DBGPrint(ps);
-        DBGPrint(F(" weight:"));
-        DBGPrintln(weight);
-
-        if(ReadSetting(useWeight)){
-            _amount = weight;
+        if(ReadSetting(krausening)){
+            _amount=calculateKrauseningBeer(Set2CV(ReadSetting(carbonation)),(float)_beerVolume/1000.0,(float)ReadSetting(beerTemperature),
+                    ReadSetting(krausenGravity),ReadSetting(krausenFG) );
+            _amount = _amount * 1000.0; 
+            DBGPrint(F("Krausening:"));
+            DBGPrintln(_amount);
+        
         }else{
-            DBGPrint(F("SG:"));
-            DBGPrintln(brix2SG((float)ReadSetting(sugarRatio)));
+            float ps=calculatePrimingSugar(Set2CV(ReadSetting(carbonation)),(float)_beerVolume/1000.0,(float)ReadSetting(beerTemperature));
+            float weight = ps / (float)ReadSetting(sugarRatio) * 100.0;
+            // if the unit is volume, calculate SG and derive volume
+            // however, temperature might be a problem. ignore that for now
+            DBGPrint(F("PS:"));
+            DBGPrint(ps);
+            DBGPrint(F(" weight:"));
+            DBGPrintln(weight);
 
-            _amount = weight / brix2SG((float)ReadSetting(sugarRatio));
+//            if(ReadSetting(useWeight)){
+                _amount = weight;
+#if 0                
+            }else{
+                DBGPrint(F("SG:"));
+                DBGPrintln(brix2SG((float)ReadSetting(sugarRatio)));
+
+                _amount = weight / brix2SG((float)ReadSetting(sugarRatio));
+            }
+#endif            
         }
     }
 
@@ -1612,7 +1657,11 @@ c2xACC2    Amount
             }
             #endif
         }else{
-            lcdPrintAt(AccumulatedOutputCol,AccumulatedOutputRow,_totalAmount,AccumulatedOutputSpace,2);
+            if(_totalAmount>=1000.0){
+                lcdPrintAt(AccumulatedOutputCol,AccumulatedOutputRow,_totalAmount,AccumulatedOutputSpace,1);
+            }else{
+                lcdPrintAt(AccumulatedOutputCol,AccumulatedOutputRow,_totalAmount,AccumulatedOutputSpace,2);
+            }
 
 
             float inLiter = _totalBeer/1000.0;
@@ -1626,7 +1675,11 @@ c2xACC2    Amount
     void _updateDosage(){
         DBGPrint(F("Sugar amount:"));
         DBGPrintln(_amount);
-        lcdPrintAt(DosageAmountCol,DosageAmountRow,_amount,DosageAmountSpace,2);
+        if(_amount >= 100.0){
+            lcdPrintAt(DosageAmountCol,DosageAmountRow,_amount,DosageAmountSpace,1);
+        }else{
+            lcdPrintAt(DosageAmountCol,DosageAmountRow,_amount,DosageAmountSpace,2);
+        }
         dosingController.setDosage(_amount);
     }
     
@@ -2946,14 +2999,25 @@ public:
 /*************************************************************************/
 // setting of 
 //  - Input Beer/Sugar  0
-//  - Sugar Brix         1
+//  - Beer Temp          1
 //  - Co2 Volume         2
-//  - Beer Temp          3
+
+//  - By Sugar/Krausen 3
+//  - Sugar Brix   4
+// or 
+//  - Krausen SG  4 
+//  - Krausen FG  5
+
 #define IndexInput 0
-#define IndexSugar 1
+#define IndexBeerTemp 1
 #define IndexCo2Volume 2
-#define IndexBeerTemp 3
-#define IndexBack 4
+
+#define IndexPrimeBy 3
+
+#define IndexSugarOGravity 4
+#define IndexBackOrFG 5
+#define IndexBack 6
+
 
 #define LowestCarbonation 15
 #define HighestCarbonation 45
@@ -2969,6 +3033,13 @@ const char strBrix[] PROGMEM="Brix";
 const char strCo2Vol[] PROGMEM="CO2 Vol.";
 const char strBeerTemp[] PROGMEM="Beer Temp";
 
+const char strPrimeBy[] PROGMEM="With";
+const char strSuger[]   PROGMEM="  Sugar";
+const char strKrausen[] PROGMEM="Krausen";
+
+const char strKrausenSG[] PROGMEM="KrausenSG";
+const char strKrausenFG[] PROGMEM="KrausenFG";
+
 /*
 0123456789012345
  Input  Beer vol
@@ -2976,7 +3047,11 @@ const char strBeerTemp[] PROGMEM="Beer Temp";
  Brix     012.Bx
  Co2 Vol.    3.2
  BeerTemp   12.C
-*/
+ With      Sugar
+         Krausen
+ Krausen SG 1048
+ Krausen FG 1012
+ */
 class PrimingSetting:public SugarApe{
 public:
     PrimingSetting(){}
@@ -2984,7 +3059,7 @@ public:
       void show(){
         _editing = false;
         _setIdx =0;
-        lcdPrint_P(1,0,strUnitSetting,true);
+        lcdPrint_P(1,0,strCarbonation,true);
         _showItem();
     }
 
@@ -2993,15 +3068,28 @@ public:
             if(_setIdx ==IndexInput){
                 if(_inputBeer) _inputBeer=0;
                 _printInputValue();
-            }else if(_setIdx ==IndexSugar){
-                if(_sugarRatio<100) _sugarRatio ++;
-                _printSugarRatio();
-            }else if(_setIdx ==IndexCo2Volume){
-                if(_carbonation < HighestCarbonation) _carbonation += 1;
-                _printCo2Volume();
             }else if(_setIdx ==IndexBeerTemp){
                 if(_beerTemperature < MaxBeerTemp) _beerTemperature ++;
                 _printBeerTemp();
+            }else if(_setIdx ==IndexCo2Volume){
+                if(_carbonation < HighestCarbonation) _carbonation += 1;
+                _printCo2Volume();
+            }else if (_setIdx == IndexPrimeBy){
+                _krausen = _krausen? 0:1;
+                _printPrimeMethod();
+            }else if(_setIdx ==IndexSugarOGravity){
+                if(_krausen){
+                    _gravity += 1;
+                    _printGravity();
+                }else{
+                    if(_sugarRatio<100) _sugarRatio ++;
+                    _printSugarRatio();
+                }
+            }else if(_setIdx ==IndexBackOrFG){
+                if(_krausen){
+                    _gravity += 1;
+                    _printGravity();
+                }
             }
             _dirty = true;
         }else{
@@ -3018,19 +3106,33 @@ public:
             if(_setIdx ==IndexInput){
                 if(_inputBeer ==0) _inputBeer=1;
                 _printInputValue();
-            } if(_setIdx ==IndexSugar){
-                if(_sugarRatio>0) _sugarRatio --;
-                _printSugarRatio();
-            }else if(_setIdx ==IndexCo2Volume){
-                if(_carbonation > LowestCarbonation) _carbonation -= 1;
-                _printCo2Volume();
             }else if(_setIdx ==IndexBeerTemp){
                 if(_beerTemperature > MinBeerTemp) _beerTemperature --;
                 _printBeerTemp();
+            }else if(_setIdx ==IndexCo2Volume){
+                if(_carbonation > LowestCarbonation) _carbonation -= 1;
+                _printCo2Volume();
+            }else if (_setIdx == IndexPrimeBy){
+                _krausen = _krausen? 0:1;
+                _printPrimeMethod();
+            }else if(_setIdx ==IndexSugarOGravity){
+                if(_krausen){
+                    _gravity -= 1;
+                    _printGravity();
+                }else{
+                    if(_sugarRatio>0) _sugarRatio --;
+                    _printSugarRatio();
+                }
+            }else if(_setIdx ==IndexBackOrFG){
+                if(_krausen){
+                    _gravity -= 1;
+                    _printGravity();
+                }
             }
+
             _dirty =true;
         }else{
-            if(_setIdx<IndexBack){
+            if( (_krausen && (_setIdx<IndexBack)) || (!_krausen && (_setIdx < IndexBackOrFG))){
                 _setIdx ++;
                 _showItem();
             }
@@ -3042,17 +3144,27 @@ public:
             EditingText.noblink();
             if(_setIdx ==IndexInput){
                 if(_dirty) WriteSetting(inputBeer,_inputBeer);
-            } if(_setIdx ==IndexSugar){
-                if(_dirty) WriteSetting(sugarRatio,_sugarRatio);
             }else if(_setIdx ==IndexCo2Volume){
                 if(_dirty) WriteSetting(carbonation,_carbonation);
             }else if(_setIdx ==IndexBeerTemp){
                 if(_dirty) WriteSetting(beerTemperature,_beerTemperature);
+            } if(_setIdx ==IndexPrimeBy){
+                if(_dirty) WriteSetting(krausening,_krausen);
+            } if(_setIdx ==IndexSugarOGravity){
+                if(_krausen){
+                    if(_dirty) WriteSetting(krausenGravity,_gravity);
+                }else{
+                    if(_dirty) WriteSetting(sugarRatio,_sugarRatio);
+                }
+            } if(_setIdx ==IndexBackOrFG){
+                if(_krausen){
+                    if(_dirty) WriteSetting(krausenFG,_gravity);
+                }
             }
             _dirty =false;
 
         }else{
-            if(_setIdx == IndexBack){
+            if( (_krausen && (_setIdx==IndexBack)) || (!_krausen && (_setIdx == IndexBackOrFG))){
                 SettingManager.save();
                 return true;
             }else{
@@ -3070,22 +3182,14 @@ protected:
     uint8_t _carbonation;
     uint8_t _sugarRatio;
     uint8_t _inputBeer;
+    uint8_t _krausen;
+    uint16_t _gravity;
 
     void _showItem(){
         if(_setIdx ==IndexInput){
             lcdPrint_P(2,1,strInput);
             _inputBeer = ReadSetting(inputBeer);
             _printInputValue();
-
-        }else if(_setIdx ==IndexSugar){
-            lcdPrint_P(2,1,strBrix,true);
-            lcd->setCursor(13,1);
-            lcd->write(DegreeChar);
-            lcd->write('B');
-            lcd->write('x');
-            _sugarRatio = ReadSetting(sugarRatio);
-            if(_sugarRatio>100) _sugarRatio=100;
-            _printSugarRatio();
         }else if(_setIdx ==IndexCo2Volume){
             lcdPrint_P(2,1, strCo2Vol, true);
             _carbonation = ReadSetting(carbonation);
@@ -3099,6 +3203,35 @@ protected:
             lcd->write('C');
             _beerTemperature = ReadSetting(beerTemperature);
             _printBeerTemp();
+        }else if(_setIdx == IndexPrimeBy){
+            lcdPrint_P(2,1,strPrimeBy,true);
+            _krausen = ReadSetting(krausening);
+            _printPrimeMethod();
+        }else if(_setIdx ==IndexSugarOGravity){
+            if(_krausen){
+                lcdPrint_P(2,1,strKrausenSG,true);
+                _gravity = ReadSetting(krausenGravity);
+                if(_gravity <990 || _gravity > 1150) _gravity = 1050;
+                _printGravity();
+            }else{
+                lcdPrint_P(2,1,strBrix,true);
+                lcd->setCursor(13,1);
+                lcd->write(DegreeChar);
+                lcd->write('B');
+                lcd->write('x');
+                _sugarRatio = ReadSetting(sugarRatio);
+                if(_sugarRatio>100) _sugarRatio=100;
+                _printSugarRatio();
+            }
+        }else if(_setIdx ==IndexBackOrFG){
+            if(_krausen){
+                lcdPrint_P(2,1,strKrausenFG,true);
+                _gravity = ReadSetting(krausenFG);
+                if(_gravity <990 || _gravity > 1150) _gravity = 1012;
+                _printGravity();
+            }else{
+                lcdPrint_P(2,1,strBack,true);
+            }
         }else if(_setIdx == IndexBack){
             lcdPrint_P(2,1,strBack,true);
         }
@@ -3125,6 +3258,19 @@ protected:
 
     void _printBeerTemp(){
         EditingText.setNumber(12,1,_beerTemperature,2);
+        EditingText.show();
+    }
+
+    void _printPrimeMethod(){
+        if(_krausen){
+            EditingText.setText_P(8,1,strKrausen);
+        }else{
+            EditingText.setText_P(8,1,strSuger);
+        }
+        EditingText.show();
+    }
+    void _printGravity(){
+        EditingText.setNumber(12,1,_gravity,4);
         EditingText.show();
     }
 
